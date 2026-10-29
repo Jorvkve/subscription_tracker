@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BillingUnit {
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELED
+}
+
+enum ReminderStatus {
+  UNREAD
+  READ
+}
+
+enum ReminderEmailStatus {
+  NOT_QUEUED
+  PENDING
+  SENDING
+  SENT
+  ERROR
+  SKIPPED
+}
+
+enum JobStatus {
+  RUNNING
+  SUCCESS
+  ERROR
+}
+
+model Subscription {
+  id             String             @id @default(cuid())
+  name           String
+  category       String             @default("Other")
+  price          Decimal            @db.Decimal(12, 2)
+  currency       String             @default("THB") @db.VarChar(3)
+  intervalCount  Int                @default(1)
+  intervalUnit   BillingUnit        @default(MONTH)
+  billingDay     Int?
+  nextDueDate    DateTime           @db.Date
+  status         SubscriptionStatus @default(ACTIVE)
+  paymentMethod  String?
+  notes          String?            @db.Text
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  payments       Payment[]
+  reminders      Reminder[]
+
+  @@index([status, nextDueDate])
+}
+
+model Payment {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount         Decimal      @db.Decimal(12, 2)
+  currency       String       @db.VarChar(3)
+  paidAt         DateTime     @default(now())
+  coveredDueDate DateTime     @db.Date
+  note           String?      @db.Text
+
+  @@unique([subscriptionId, coveredDueDate])
+  @@index([paidAt])
+}
+
+model Reminder {
+  id             String           @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  dueDate        DateTime         @db.Date
+  daysBefore     Int
+  status         ReminderStatus      @default(UNREAD)
+  emailStatus    ReminderEmailStatus @default(NOT_QUEUED)
+  emailAttemptedAt DateTime?
+  emailSentAt    DateTime?
+  emailErrorCode String?             @db.VarChar(100)
+  emailMessageId String?
+  createdAt      DateTime            @default(now())
+  readAt         DateTime?
+
+  @@unique([subscriptionId, dueDate, daysBefore])
+  @@index([status, createdAt])
+}
+
+model JobExecution {
+  id           String    @id @default(cuid())
+  jobName      String
+  status       JobStatus @default(RUNNING)
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  createdCount Int       @default(0)
+  errorMessage String?   @db.Text
+
+  @@index([jobName, startedAt])
+}
+
+\n
