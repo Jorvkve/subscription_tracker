@@ -105,5 +105,3 @@ model JobExecution {
 
   @@index([jobName, startedAt])
 }
-
-\n
