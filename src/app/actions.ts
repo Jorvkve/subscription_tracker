@@ -213,5 +213,3 @@ export async function markReminderRead(id: string) {
   });
   revalidatePath("/");
 }
-
-\n

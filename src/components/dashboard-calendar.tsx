@@ -103,6 +103,3 @@ export function DashboardCalendar({
     </div>
   </section>;
 }
-
-
-\n

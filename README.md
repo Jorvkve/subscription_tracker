@@ -46,6 +46,3 @@ Spreadsheet import is intentionally not included. Add and manage subscriptions m
 - `npm run db:generate` — generate Prisma client
 - `npm run db:migrate -- --name <migration>` — create/apply a development migration (requires `DIRECT_URL`)
 - `npm run db:deploy` — apply checked-in migrations to the configured database (requires `DIRECT_URL`)
-
-
-\n

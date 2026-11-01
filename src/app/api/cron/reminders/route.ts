@@ -186,7 +186,3 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "Reminder generation failed. See activity log." }, { status: 500 });
   }
 }
-
-
-
-\n

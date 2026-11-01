@@ -74,5 +74,3 @@ describe("dashboard billing calendar", () => {
     ]);
   });
 });
-
-\n

@@ -57,5 +57,3 @@ describe("email reminder eligibility", () => {
     expect(reminderEmailEligible({ ...base, daysBefore: 6 })).toBe(false);
   });
 });
-
-\n
