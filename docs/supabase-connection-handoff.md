@@ -10,12 +10,13 @@
 - A read-only `SELECT 1` using the current `DATABASE_URL` failed with `SELF_SIGNED_CERT_IN_CHAIN`.
 - Node's `pg` driver emitted a warning that it treats `sslmode=require` as certificate verification. No Supabase CA certificate is present in the repository yet.
 - No schema migration has been applied to Supabase. `npm run db:deploy` has not been run.
+- Runtime PostgreSQL adapter support for the Supabase CA is implemented via `SUPABASE_DB_CA_BASE64`; Prisma CLI adds the local `certs/supabase-ca.crt` path when that file exists.
 
 ## Next steps
 
-1. In Supabase Dashboard, open **Database → Settings → SSL Configuration** and download the database CA certificate. Save it in the project as `certs/supabase-ca.crt`. This certificate is public; database passwords are not.
-2. Update the runtime Prisma adapter in `src/lib/prisma.ts` to trust the downloaded CA. When passing an explicit `ssl` object to node-postgres, remove `sslmode`/`sslrootcert` from the runtime URL passed to the adapter because URL SSL settings override the explicit SSL object. Keep the transaction pooler's `pgbouncer=true` setting.
-3. Configure Prisma CLI's `DIRECT_URL` path in `prisma.config.ts` to verify the Supabase server using the CA certificate (`sslmode=verify-full` and `sslrootcert` pointing to the certificate).
+1. In Supabase Dashboard, open **Database → Settings → SSL Configuration** and download the database CA certificate. Save it as `certs/supabase-ca.crt`. The certificate is public; database passwords are not.
+2. Set `SUPABASE_DB_CA_BASE64` to the Base64-encoded certificate for the runtime (Vercel environment variables). Keep `DATABASE_URL` on the Transaction pooler and retain `pgbouncer=true`.
+3. For Prisma CLI, use the Direct connection or Session pooler in `DIRECT_URL`. The Prisma config sets `sslmode=verify-full` and `sslrootcert` to the downloaded file when present.
 4. Re-run a read-only `SELECT 1` using `DATABASE_URL` and `prisma migrate status` using `DIRECT_URL`. Do not run `npm run db:deploy` until both connections succeed.
 5. After connectivity is confirmed, apply the checked-in migrations with `npm run db:deploy` if the Supabase database is intended to receive the app schema.
 
