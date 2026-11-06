@@ -3,6 +3,7 @@ import {
   detectImageType,
   MAX_SLIP_BYTES,
   parseSlipForm,
+  slipDriveFileName,
   validateSlipFile,
 } from "@/lib/slip-input";
 
@@ -79,6 +80,20 @@ describe("validateSlipFile", () => {
 
   it("accepts a small valid file", () => {
     expect(() => validateSlipFile(makeFile(1024))).not.toThrow();
+  });
+});
+
+describe("slipDriveFileName", () => {
+  it("uses day, month, Christian year, then time", () => {
+    expect(slipDriveFileName("2026-11-07", "14:30", "image/jpeg")).toBe("07-11-2026_14-30.jpg");
+  });
+
+  it("leaves the time out when the slip has none", () => {
+    expect(slipDriveFileName("2026-01-02", null, "image/png")).toBe("02-01-2026.png");
+  });
+
+  it("uses the extension of the detected type", () => {
+    expect(slipDriveFileName("2026-11-07", "09:05", "image/webp")).toBe("07-11-2026_09-05.webp");
   });
 });
 

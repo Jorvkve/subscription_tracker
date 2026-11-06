@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getPrisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
-import { detectImageType, parseSlipForm, validateSlipFile } from "@/lib/slip-input";
+import { detectImageType, parseSlipForm, slipDriveFileName, validateSlipFile } from "@/lib/slip-input";
 import {
   DriveAuthError,
   DriveNotConnectedError,
@@ -66,8 +66,7 @@ export async function createSlip(
   }
 
   // Generate a server-side Drive file name (ignore user's file name for Drive)
-  const ext = contentType === "image/jpeg" ? "jpg" : contentType === "image/png" ? "png" : "webp";
-  const driveName = `slip_${parsed.paidDate}_${crypto.randomUUID()}.${ext}`;
+  const driveName = slipDriveFileName(parsed.paidDate, parsed.paidTime, contentType);
 
   // Keep sanitized original name in fileName
   const originalName = file!.name ? sanitizeFileName(file!.name) : driveName;

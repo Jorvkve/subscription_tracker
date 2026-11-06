@@ -55,6 +55,27 @@ export function validateSlipFile(file: File | null | undefined): void {
   }
 }
 
+const SLIP_FILE_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
+/**
+ * Drive file name in the form DD-MM-YYYY_HH-mm.jpg, using the Christian year.
+ * Hyphens stand in for slashes and colons, which read as paths or fail on download.
+ * The time is left out when the slip has none.
+ */
+export function slipDriveFileName(
+  paidDate: string,
+  paidTime: string | null,
+  contentType: string,
+): string {
+  const [year, month, day] = paidDate.split("-");
+  const time = paidTime ? `_${paidTime.replace(":", "-")}` : "";
+  return `${day}-${month}-${year}${time}.${SLIP_FILE_EXTENSIONS[contentType]}`;
+}
+
 export type SlipFormInput = {
   amount: number;
   currency: string;
