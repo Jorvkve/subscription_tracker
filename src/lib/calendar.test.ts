@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCalendarEvents, calendarGrid } from "@/lib/calendar";
+import { buildCalendarEvents, buildScheduleEvents, calendarGrid } from "@/lib/calendar";
 
 const monthly = {
   id: "icloud",
@@ -72,5 +72,63 @@ describe("dashboard billing calendar", () => {
     expect(events).toEqual([
       expect.objectContaining({ date: "2026-10-20", kind: "OVERDUE" }),
     ]);
+  });
+
+  it("copies chargeTime for DUE, OVERDUE, and PROJECTED events", () => {
+    const events = buildCalendarEvents({
+      month: "2026-11",
+      today: "2026-10-01",
+      subscriptions: [{ ...monthly, chargeTime: "14:30" }],
+      payments: [],
+    });
+    expect(events[0]?.chargeTime).toBe("14:30");
+
+    const overdueEvents = buildCalendarEvents({
+      month: "2026-10",
+      today: "2026-11-01",
+      subscriptions: [{ ...monthly, nextDueDate: "2026-10-20", chargeTime: "09:00" }],
+      payments: [],
+    });
+    expect(overdueEvents[0]?.chargeTime).toBe("09:00");
+  });
+});
+
+describe("buildScheduleEvents", () => {
+  it("keeps items in the month and filters out DONE tasks and tasks with no due date", () => {
+    const events = buildScheduleEvents({
+      month: "2026-11",
+      tasks: [
+        { id: "t1", title: "Open Task", dueDate: "2026-11-10", priority: "MEDIUM", status: "TODO" },
+        { id: "t2", title: "Done Task", dueDate: "2026-11-12", priority: "HIGH", status: "DONE" },
+        { id: "t3", title: "No Date Task", dueDate: null, priority: "LOW", status: "TODO" },
+        { id: "t4", title: "Next Month Task", dueDate: "2026-12-01", priority: "MEDIUM", status: "IN_PROGRESS" },
+      ],
+      shifts: [
+        { id: "s1", title: "Shift Nov", date: "2026-11-10", startTime: "09:00", endTime: "17:00" },
+        { id: "s2", title: "Shift Oct", date: "2026-10-31", startTime: "08:00", endTime: "16:00" },
+      ],
+    });
+
+    expect(events).toHaveLength(2);
+    expect(events.map((e) => e.id)).toEqual(["t1", "s1"]);
+  });
+
+  it("sorts schedule events by date, then time, then title", () => {
+    const events = buildScheduleEvents({
+      month: "2026-11",
+      tasks: [
+        { id: "t2", title: "Task B", dueDate: "2026-11-15", priority: "MEDIUM", status: "TODO" },
+        { id: "t1", title: "Task A", dueDate: "2026-11-15", priority: "MEDIUM", status: "TODO" },
+        { id: "t0", title: "Early Task", dueDate: "2026-11-05", priority: "LOW", status: "TODO" },
+      ],
+      shifts: [
+        { id: "s2", title: "Afternoon Shift", date: "2026-11-15", startTime: "13:00", endTime: "21:00" },
+        { id: "s1", title: "Morning Shift", date: "2026-11-15", startTime: "08:00", endTime: "16:00" },
+      ],
+    });
+
+    // 2026-11-05: Early Task
+    // 2026-11-15: Task A (time ""), Task B (time ""), Morning Shift (08:00), Afternoon Shift (13:00)
+    expect(events.map((e) => e.id)).toEqual(["t0", "t1", "t2", "s1", "s2"]);
   });
 });

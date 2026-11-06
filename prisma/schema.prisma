@@ -7,6 +7,18 @@ datasource db {
   provider = "postgresql"
 }
 
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 enum BillingUnit {
   DAY
   WEEK
@@ -49,6 +61,7 @@ model Subscription {
   intervalCount  Int                @default(1)
   intervalUnit   BillingUnit        @default(MONTH)
   billingDay     Int?
+  chargeTime     String?            @db.VarChar(5)
   nextDueDate    DateTime           @db.Date
   status         SubscriptionStatus @default(ACTIVE)
   paymentMethod  String?
@@ -104,4 +117,32 @@ model JobExecution {
   errorMessage String?   @db.Text
 
   @@index([jobName, startedAt])
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?      @db.Text
+  dueDate     DateTime?    @db.Date
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus   @default(TODO)
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([status, dueDate])
+}
+
+model WorkShift {
+  id        String   @id @default(cuid())
+  title     String
+  date      DateTime @db.Date
+  startTime String   @db.VarChar(5)
+  endTime   String   @db.VarChar(5)
+  location  String?
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
 }

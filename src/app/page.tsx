@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { DashboardCalendar } from "@/components/dashboard-calendar";
 import { SubscriptionStatus } from "@/generated/prisma/client";
 import { groupCostTotals } from "@/lib/billing";
-import { buildCalendarEvents } from "@/lib/calendar";
+import { buildCalendarEvents, buildScheduleEvents } from "@/lib/calendar";
 import { addDays, appDateString, dateOnly, formatDate, utcDate } from "@/lib/dates";
 import { cycleName, dayDifference, money } from "@/lib/display";
 import { getPrisma } from "@/lib/prisma";
@@ -41,7 +41,7 @@ export default async function DashboardPage({
   const monthLastDay = monthEnd(calendarMonth);
   const soon = addDays(today, 30);
   const db = getPrisma();
-  const [subscriptions, reminders, unreadReminderCount, payments] = await Promise.all([
+  const [subscriptions, reminders, unreadReminderCount, payments, tasks, shifts] = await Promise.all([
     db.subscription.findMany({
       where: { status: SubscriptionStatus.ACTIVE },
       orderBy: { nextDueDate: "asc" },
@@ -57,6 +57,18 @@ export default async function DashboardPage({
       where: { coveredDueDate: { gte: utcDate(monthStart), lte: utcDate(monthLastDay) } },
       include: { subscription: { select: { name: true } } },
       orderBy: { coveredDueDate: "asc" },
+    }),
+    db.task.findMany({
+      where: {
+        dueDate: { gte: utcDate(monthStart), lte: utcDate(monthLastDay) },
+      },
+      orderBy: { dueDate: "asc" },
+    }),
+    db.workShift.findMany({
+      where: {
+        date: { gte: utcDate(monthStart), lte: utcDate(monthLastDay) },
+      },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
     }),
   ]);
   const currentReminders = reminders.filter((reminder) =>
@@ -90,6 +102,7 @@ export default async function DashboardPage({
       intervalCount: subscription.intervalCount,
       intervalUnit: subscription.intervalUnit,
       billingDay: subscription.billingDay,
+      chargeTime: subscription.chargeTime,
       nextDueDate: dateOnly(subscription.nextDueDate),
     })),
     payments: payments.map((payment) => ({
@@ -99,6 +112,26 @@ export default async function DashboardPage({
       amount: Number(payment.amount),
       currency: payment.currency,
       coveredDueDate: dateOnly(payment.coveredDueDate),
+    })),
+  });
+
+  const scheduleEvents = buildScheduleEvents({
+    month: calendarMonth,
+    tasks: tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      dueDate: task.dueDate ? dateOnly(task.dueDate) : null,
+      priority: task.priority,
+      status: task.status,
+    })),
+    shifts: shifts.map((shift) => ({
+      id: shift.id,
+      title: shift.title,
+      date: dateOnly(shift.date),
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      location: shift.location,
+      notes: shift.notes,
     })),
   });
 
@@ -138,7 +171,13 @@ export default async function DashboardPage({
 
       {Object.keys(totals).length === 0 && <section className="empty-callout"><div className="empty-icon">＋</div><div><strong>เริ่มติดตาม Subscription แรกของคุณ</strong><p>เพิ่มบริการและกำหนดรอบบิล เพื่อดูยอดรวมและการแจ้งเตือนที่นี่</p></div><Link className="button button-primary" href="/subscriptions/new">เพิ่มรายการ</Link></section>}
 
-      <DashboardCalendar key={calendarMonth} month={calendarMonth} today={today} events={calendarEvents} />
+      <DashboardCalendar
+        key={calendarMonth}
+        month={calendarMonth}
+        today={today}
+        events={calendarEvents}
+        scheduleEvents={scheduleEvents}
+      />
 
       <div className="dashboard-columns">
         <section className="panel">

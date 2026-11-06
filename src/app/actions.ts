@@ -7,6 +7,7 @@ import { advanceDueDate } from "@/lib/billing";
 import { dateOnly, utcDate } from "@/lib/dates";
 import { getPrisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
+import { parseTimeOfDay } from "@/lib/time-of-day";
 
 type SubscriptionInput = {
   name: string;
@@ -16,6 +17,7 @@ type SubscriptionInput = {
   intervalCount: number;
   intervalUnit: BillingUnit;
   billingDay: number | null;
+  chargeTime: string | null;
   nextDueDate: Date;
   status: SubscriptionStatus;
   paymentMethod: string | null;
@@ -33,6 +35,8 @@ function parseSubscription(formData: FormData): SubscriptionInput {
   const intervalUnit = String(formData.get("intervalUnit")) as BillingUnit;
   const billingDayValue = String(formData.get("billingDay") ?? "").trim();
   const billingDay = billingDayValue ? Number(billingDayValue) : null;
+  const chargeTimeRaw = String(formData.get("chargeTime") ?? "").trim();
+  const chargeTime = chargeTimeRaw ? parseTimeOfDay(chargeTimeRaw) : null;
   const dueDateValue = String(formData.get("nextDueDate") ?? "");
   const status = String(formData.get("status")) as SubscriptionStatus;
   const allowedUnits = Object.values(BillingUnit) as string[];
@@ -68,6 +72,7 @@ function parseSubscription(formData: FormData): SubscriptionInput {
     intervalCount,
     intervalUnit,
     billingDay,
+    chargeTime,
     nextDueDate: dueDate,
     status,
     paymentMethod: String(formData.get("paymentMethod") ?? "").trim() || null,

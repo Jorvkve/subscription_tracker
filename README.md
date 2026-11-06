@@ -27,6 +27,14 @@ Google login requires a verified email listed in `ALLOWED_GOOGLE_EMAILS` as a co
 - In-app and email reminders are generated for 7, 3, and 1 days before each active subscription's due date. Database uniqueness and an atomic email status claim prevent duplicate sends. A failed or ambiguous SMTP attempt is logged and is not automatically retried.
 - The Dashboard calendar shows current due dates, overdue items, projected future cycles, and paid billing dates. Selecting a day displays subscription details.
 - Scheduled job runs and sanitized error messages are retained in `JobExecution`.
+- A subscription can store an optional charge time (`HH:mm`), shown on its detail page and in the calendar.
+
+## Work schedule
+
+`/schedule` manages tasks and work shifts, and the Dashboard calendar shows them alongside billing dates.
+
+- Tasks have an optional due date, a priority, and a status. Completed tasks keep their original completion date when edited.
+- Shifts store a date with start and end times in app local time. An end time earlier than the start time means the shift ends the next day; it appears on its start date only. A new shift can repeat weekly for up to 26 weeks, creating one independent record per week.
 
 ## Deployment
 

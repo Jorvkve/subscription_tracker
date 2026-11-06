@@ -13,6 +13,7 @@ type SubscriptionValues = {
   intervalCount: number;
   intervalUnit: BillingUnit;
   billingDay: number | null;
+  chargeTime?: string | null;
   nextDueDate: string;
   status: SubscriptionStatus;
   paymentMethod: string | null;
@@ -44,6 +45,7 @@ export function SubscriptionForm({
         <label className="field">สกุลเงิน<input name="currency" maxLength={3} minLength={3} required defaultValue={values?.currency ?? "THB"} /></label>
         <div className="field field-wide"><span>รอบบิล</span><div className="interval-input"><input name="intervalCount" type="number" min="1" max="120" required defaultValue={values?.intervalCount ?? 1} /><select name="intervalUnit" defaultValue={values?.intervalUnit ?? "MONTH"}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></div><small>ตัวอย่าง Spotify: ทุก 3 เดือน</small></div>
         <label className="field">วันตัดรอบ<input name="billingDay" type="number" min="1" max="31" defaultValue={values?.billingDay ?? ""} placeholder="เช่น 28" /></label>
+        <label className="field">เวลาตัดรอบชำระ<input name="chargeTime" type="time" defaultValue={values?.chargeTime ?? ""} /></label>
         <label className="field">วันครบกำหนดถัดไป<input name="nextDueDate" type="date" required defaultValue={values?.nextDueDate} /></label>
         <label className="field">วิธีชำระเงิน<input name="paymentMethod" defaultValue={values?.paymentMethod ?? ""} placeholder="บัตรเครดิต, โอนเงิน..." /></label>
         <label className="field">สถานะ<select name="status" defaultValue={values?.status ?? "ACTIVE"}><option value="ACTIVE">กำลังใช้งาน</option><option value="PAUSED">พักชำระ</option><option value="CANCELED">ยกเลิกแล้ว</option></select></label>

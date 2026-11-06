@@ -8,7 +8,7 @@ export function AppShell({
 }: {
   children: React.ReactNode;
   email: string;
-  active?: "overview" | "subscriptions" | "activity";
+  active?: "overview" | "subscriptions" | "schedule" | "activity";
 }) {
   return (
     <div className="app-layout">
@@ -24,6 +24,9 @@ export function AppShell({
           </Link>
           <Link className={active === "subscriptions" ? "nav-link active" : "nav-link"} href="/subscriptions">
             <span className="nav-icon">▤</span> รายการ Subscription
+          </Link>
+          <Link className={active === "schedule" ? "nav-link active" : "nav-link"} href="/schedule">
+            <span className="nav-icon">▦</span> ตารางงาน
           </Link>
           <Link className={active === "activity" ? "nav-link active" : "nav-link"} href="/activity">
             <span className="nav-icon">◷</span> ประวัติและระบบ

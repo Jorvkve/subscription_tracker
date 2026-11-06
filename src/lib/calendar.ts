@@ -1,4 +1,6 @@
 import { advanceDueDate, type BillingUnit } from "@/lib/billing";
+import { dateOnly } from "@/lib/dates";
+import type { TaskPriority, TaskStatus } from "@/generated/prisma/client";
 
 export type CalendarEventKind = "DUE" | "OVERDUE" | "PROJECTED" | "PAID";
 
@@ -10,6 +12,7 @@ export type CalendarSubscription = {
   intervalCount: number;
   intervalUnit: BillingUnit;
   billingDay: number | null;
+  chargeTime?: string | null;
   nextDueDate: string;
 };
 
@@ -29,9 +32,52 @@ export type CalendarEvent = {
   amount: number;
   currency: string;
   date: string;
+  chargeTime?: string | null;
   kind: CalendarEventKind;
   intervalCount?: number;
   intervalUnit?: BillingUnit;
+};
+
+export type ScheduleTaskEvent = {
+  kind: "TASK";
+  id: string;
+  title: string;
+  date: string;
+  priority: TaskPriority;
+  status: TaskStatus;
+  time?: string;
+};
+
+export type ScheduleShiftEvent = {
+  kind: "SHIFT";
+  id: string;
+  title: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  location?: string | null;
+  notes?: string | null;
+  time?: string;
+};
+
+export type ScheduleEvent = ScheduleTaskEvent | ScheduleShiftEvent;
+
+export type ScheduleTaskInput = {
+  id: string;
+  title: string;
+  dueDate: string | Date | null;
+  priority: TaskPriority;
+  status: TaskStatus;
+};
+
+export type ScheduleShiftInput = {
+  id: string;
+  title: string;
+  date: string | Date;
+  startTime: string;
+  endTime: string;
+  location?: string | null;
+  notes?: string | null;
 };
 
 function parseMonth(month: string) {
@@ -74,6 +120,7 @@ export function buildCalendarEvents(input: {
           amount: subscription.amount,
           currency: subscription.currency,
           date: dueDate,
+          chargeTime: subscription.chargeTime ?? null,
           kind: "OVERDUE",
           intervalCount: subscription.intervalCount,
           intervalUnit: subscription.intervalUnit,
@@ -93,6 +140,7 @@ export function buildCalendarEvents(input: {
           amount: subscription.amount,
           currency: subscription.currency,
           date: dueDate,
+          chargeTime: subscription.chargeTime ?? null,
           kind: projected ? "PROJECTED" : "DUE",
           intervalCount: subscription.intervalCount,
           intervalUnit: subscription.intervalUnit,
@@ -126,4 +174,53 @@ export function buildCalendarEvents(input: {
   }
 
   return events.sort((left, right) => left.date.localeCompare(right.date) || left.name.localeCompare(right.name));
+}
+
+export function buildScheduleEvents(input: {
+  month: string;
+  tasks: readonly ScheduleTaskInput[];
+  shifts: readonly ScheduleShiftInput[];
+}): ScheduleEvent[] {
+  const { start, end } = parseMonth(input.month);
+  const events: ScheduleEvent[] = [];
+
+  for (const task of input.tasks) {
+    if (task.status === "DONE" || !task.dueDate) continue;
+    const date = dateOnly(task.dueDate);
+    if (date >= start && date <= end) {
+      events.push({
+        kind: "TASK",
+        id: task.id,
+        title: task.title,
+        date,
+        priority: task.priority,
+        status: task.status,
+        time: "",
+      });
+    }
+  }
+
+  for (const shift of input.shifts) {
+    const date = dateOnly(shift.date);
+    if (date >= start && date <= end) {
+      events.push({
+        kind: "SHIFT",
+        id: shift.id,
+        title: shift.title,
+        date,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        location: shift.location ?? null,
+        notes: shift.notes ?? null,
+        time: shift.startTime,
+      });
+    }
+  }
+
+  return events.sort(
+    (left, right) =>
+      left.date.localeCompare(right.date) ||
+      (left.time ?? "").localeCompare(right.time ?? "") ||
+      left.title.localeCompare(right.title),
+  );
 }
