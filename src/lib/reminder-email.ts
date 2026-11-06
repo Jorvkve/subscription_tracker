@@ -46,7 +46,8 @@ function validEmail(value: string): boolean {
 export function readReminderMailConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): ReminderMailConfig | null {
-  const user = env.SMTP_USER?.trim() ?? "";
+  const allowlistedSender = env.ALLOWED_GOOGLE_EMAILS?.split(",")[0]?.trim() ?? "";
+  const user = env.SMTP_USER?.trim() || allowlistedSender;
   const password = env.SMTP_APP_PASSWORD?.replace(/\s/g, "") ?? "";
   const port = Number(env.SMTP_PORT || 465);
   const allowlistedRecipient = env.ALLOWED_GOOGLE_EMAILS?.split(",")[0]?.trim() ?? "";

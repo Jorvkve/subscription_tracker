@@ -53,4 +53,14 @@ describe("reminder email", () => {
       to: "owner@example.com",
     });
   });
+
+  it("uses the authorized Google account as the SMTP sender when SMTP_USER is omitted", () => {
+    expect(readReminderMailConfig({
+      SMTP_APP_PASSWORD: "abcdefghijklmnop",
+      ALLOWED_GOOGLE_EMAILS: "owner@example.com,other@example.com",
+    })).toMatchObject({
+      user: "owner@example.com",
+      to: "owner@example.com",
+    });
+  });
 });

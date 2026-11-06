@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildPostgresAdapterConfig } from "@/lib/postgres-adapter-config";
+import {
+  buildPostgresAdapterConfig,
+  resolveSupabaseCaBase64,
+} from "@/lib/postgres-adapter-config";
 
 const certificate = "-----BEGIN CERTIFICATE-----\nunit-test-certificate\n-----END CERTIFICATE-----";
 
@@ -27,5 +30,13 @@ describe("PostgreSQL adapter configuration", () => {
       "postgresql://user:pass@db.example.com:5432/postgres",
       Buffer.from("not a certificate").toString("base64"),
     )).toThrow("SUPABASE_DB_CA_BASE64 must contain a PEM certificate.");
+  });
+
+  it("uses the packaged CA file when no Base64 environment value is set", () => {
+    expect(resolveSupabaseCaBase64(
+      "postgresql://user:pass@aws-1-region.pooler.supabase.com:6543/postgres",
+      undefined,
+      certificate,
+    )).toBe(Buffer.from(certificate).toString("base64"));
   });
 });

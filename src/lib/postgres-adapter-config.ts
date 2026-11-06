@@ -1,5 +1,21 @@
 import type { PoolConfig } from "pg";
 
+export function resolveSupabaseCaBase64(
+  connectionString: string,
+  envValue?: string,
+  caFileContents?: string,
+): string | undefined {
+  const hostname = new URL(connectionString).hostname;
+  if (!/\.supabase\.(?:co|com)$/.test(hostname)) return undefined;
+
+  const configuredValue = envValue?.trim();
+  if (configuredValue) return configuredValue;
+
+  return caFileContents?.trim()
+    ? Buffer.from(caFileContents).toString("base64")
+    : undefined;
+}
+
 export function buildPostgresAdapterConfig(
   connectionString: string,
   caBase64?: string,
