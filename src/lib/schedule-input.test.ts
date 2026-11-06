@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TaskStatus } from "@/generated/prisma/client";
 import {
+  parseShiftCreateForm,
   parseShiftForm,
   parseTaskForm,
   resolveCompletedAt,
@@ -141,26 +142,6 @@ describe("parseShiftForm", () => {
     expect(result.endTime).toBe("16:00");
     expect(result.location).toBe("อาคาร A ชั้น 4");
     expect(result.notes).toBe("เตรียมบัตรพนักงาน");
-    expect(result.repeatWeeks).toBe(1);
-    expect(result.dates).toEqual(["2026-11-10"]);
-  });
-
-  it("generates repeating dates 7 days apart across month boundaries", () => {
-    const formData = new FormData();
-    formData.set("title", "กะวันอาทิตย์");
-    formData.set("date", "2026-10-25");
-    formData.set("startTime", "09:00");
-    formData.set("endTime", "17:00");
-    formData.set("repeatWeeks", "4");
-
-    const result = parseShiftForm(formData);
-    expect(result.repeatWeeks).toBe(4);
-    expect(result.dates).toEqual([
-      "2026-10-25",
-      "2026-11-01",
-      "2026-11-08",
-      "2026-11-15",
-    ]);
   });
 
   it("rejects equal start and end times", () => {
@@ -214,17 +195,56 @@ describe("parseShiftForm", () => {
     notesForm.set("notes", "N".repeat(2001));
     expect(() => parseShiftForm(notesForm)).toThrow(/2000/);
   });
+});
 
-  it("rejects repeatWeeks out of 1-26 range or non-integer", () => {
-    const testCases = ["0", "27", "-1", "3.5", "abc"];
-    for (const val of testCases) {
-      const formData = new FormData();
-      formData.set("title", "กะทดสอบ");
-      formData.set("date", "2026-11-10");
-      formData.set("startTime", "08:00");
-      formData.set("endTime", "16:00");
-      formData.set("repeatWeeks", val);
-      expect(() => parseShiftForm(formData)).toThrow(/1 ถึง 26/);
+describe("parseShiftCreateForm", () => {
+  function createForm(fields: Record<string, string>, weekdays: string[] = []) {
+    const formData = new FormData();
+    formData.set("title", "กะเช้า");
+    formData.set("startTime", "08:00");
+    formData.set("endTime", "16:00");
+    for (const [key, value] of Object.entries(fields)) formData.set(key, value);
+    for (const day of weekdays) formData.append("weekdays", day);
+    return formData;
+  }
+
+  it("creates one shift from a start date alone", () => {
+    const result = parseShiftCreateForm(createForm({ startDate: "2026-11-10" }));
+    expect(result.dates).toEqual(["2026-11-10"]);
+    expect(result.title).toBe("กะเช้า");
+  });
+
+  it("expands the selected weekdays across the date range", () => {
+    const result = parseShiftCreateForm(
+      createForm({ startDate: "2026-11-27", endDate: "2026-12-02" }, ["1", "5"]),
+    );
+    expect(result.dates).toEqual(["2026-11-27", "2026-11-30"]);
+  });
+
+  it("validates the shared shift fields", () => {
+    expect(() =>
+      parseShiftCreateForm(createForm({ startDate: "2026-11-10", endTime: "08:00" })),
+    ).toThrow(/ต้องไม่ตรงกัน/);
+    expect(() =>
+      parseShiftCreateForm(createForm({ startDate: "2026-11-10", title: "" })),
+    ).toThrow(/1 ถึง 100/);
+  });
+
+  it("rejects weekday values outside 0 to 6", () => {
+    for (const day of ["7", "-1", "1.5", "mon", ""]) {
+      expect(() =>
+        parseShiftCreateForm(createForm({ startDate: "2026-11-10", endDate: "2026-11-20" }, [day])),
+      ).toThrow(/ทำซ้ำไม่ถูกต้อง/);
     }
+  });
+
+  it("surfaces the recurrence rules as errors", () => {
+    expect(() => parseShiftCreateForm(createForm({}))).toThrow(/วันที่เริ่ม/);
+    expect(() =>
+      parseShiftCreateForm(createForm({ startDate: "2026-11-10" }, ["1"])),
+    ).toThrow(/วันที่สิ้นสุด/);
+    expect(() =>
+      parseShiftCreateForm(createForm({ startDate: "2026-11-10", endDate: "2026-11-20" })),
+    ).toThrow(/อย่างน้อย 1 วัน/);
   });
 });

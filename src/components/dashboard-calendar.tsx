@@ -148,14 +148,15 @@ export function DashboardCalendar({
           const selected = selectedDate === date;
           const hasOverdue = dayBilling.some((event) => event.kind === "OVERDUE");
           const hasPaid = dayBilling.some((event) => event.kind === "PAID");
-          const hasTask = daySchedule.some((event) => event.kind === "TASK");
-          const hasShift = daySchedule.some((event) => event.kind === "SHIFT");
+          const dayShifts = daySchedule.filter((event) => event.kind === "SHIFT");
+          // Shifts get their own chips, so the indicator covers billing and tasks only.
+          const indicatorCount = totalCount - dayShifts.length;
+          const hasTask = daySchedule.length > dayShifts.length;
 
           let indicatorClass = "";
           if (hasOverdue) indicatorClass = " indicator-overdue";
           else if (hasPaid) indicatorClass = " indicator-paid";
-          else if (hasTask) indicatorClass = " indicator-task";
-          else if (hasShift) indicatorClass = " indicator-shift";
+          else if (hasTask && dayBilling.length === 0) indicatorClass = " indicator-task";
 
           return (
             <button
@@ -170,13 +171,26 @@ export function DashboardCalendar({
               key={date}
             >
               <span className="calendar-day-number">{Number(date.slice(8))}</span>
-              {totalCount > 0 && (
+              {indicatorCount > 0 && (
                 <span
                   className={`calendar-day-indicator${indicatorClass}`}
                   aria-hidden="true"
                 >
                   <i />
-                  {totalCount > 1 && <small>{totalCount}</small>}
+                  {indicatorCount > 1 && <small>{indicatorCount}</small>}
+                </span>
+              )}
+              {dayShifts.length > 0 && (
+                <span className="calendar-day-shifts" aria-hidden="true">
+                  <span className="calendar-day-shift-dot" />
+                  {dayShifts.slice(0, 2).map((shift) => (
+                    <span className="calendar-day-shift" key={shift.id}>
+                      {shift.time} {shift.title}
+                    </span>
+                  ))}
+                  {dayShifts.length > 2 && (
+                    <span className="calendar-day-shift-more">+{dayShifts.length - 2}</span>
+                  )}
                 </span>
               )}
             </button>

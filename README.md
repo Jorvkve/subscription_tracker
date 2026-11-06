@@ -34,7 +34,7 @@ Google login requires a verified email listed in `ALLOWED_GOOGLE_EMAILS` as a co
 `/schedule` manages tasks and work shifts, and the Dashboard calendar shows them alongside billing dates.
 
 - Tasks have an optional due date, a priority, and a status. Completed tasks keep their original completion date when edited.
-- Shifts store a date with start and end times in app local time. An end time earlier than the start time means the shift ends the next day; it appears on its start date only. A new shift can repeat weekly for up to 26 weeks, creating one independent record per week.
+- Shifts store a date with start and end times in app local time. An end time earlier than the start time means the shift ends the next day; it appears on its start date only. A new shift can repeat on chosen weekdays between a start and end date, up to 366 days, creating one independent record per date. After saving, the Dashboard calendar opens on that month and each day shows its shifts.
 
 ## Expense slips
 

@@ -16,7 +16,7 @@ export default async function NewShiftPage() {
       <header className="page-header compact-header">
         <div>
           <h1>เพิ่มกะงานใหม่</h1>
-          <p className="muted">กำหนดวัน เวลา และสถานที่ของกะงาน พร้อมตัวเลือกทำซ้ำรายสัปดาห์</p>
+          <p className="muted">กำหนดวันเริ่มต้น วันสิ้นสุด และวันในสัปดาห์ที่ต้องการทำซ้ำ</p>
         </div>
       </header>
       <ShiftForm
@@ -27,7 +27,6 @@ export default async function NewShiftPage() {
           date: today,
           startTime: "08:00",
           endTime: "17:00",
-          repeatWeeks: 1,
         }}
       />
     </AppShell>

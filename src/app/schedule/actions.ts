@@ -6,9 +6,11 @@ import { TaskStatus } from "@/generated/prisma/client";
 import { utcDate } from "@/lib/dates";
 import { getPrisma } from "@/lib/prisma";
 import {
+  parseShiftCreateForm,
   parseShiftForm,
   parseTaskForm,
   resolveCompletedAt,
+  type ShiftCreateInput,
   type ShiftFormInput,
   type TaskFormInput,
 } from "@/lib/schedule-input";
@@ -142,9 +144,9 @@ export async function createShifts(
   formData: FormData,
 ): Promise<FormActionState> {
   await requireSession();
-  let data: ShiftFormInput;
+  let data: ShiftCreateInput;
   try {
-    data = parseShiftForm(formData);
+    data = parseShiftCreateForm(formData);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "ตรวจสอบข้อมูลอีกครั้ง" };
   }
@@ -166,7 +168,7 @@ export async function createShifts(
 
   revalidatePath("/");
   revalidatePath("/schedule");
-  redirect("/schedule");
+  redirect(`/?month=${data.dates[0].slice(0, 7)}`);
 }
 
 export async function updateShift(

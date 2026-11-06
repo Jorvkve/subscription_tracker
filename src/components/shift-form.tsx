@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { FormActionState } from "@/app/actions";
+import { formatDate } from "@/lib/dates";
+import { WEEKDAY_LABELS, WORKING_WEEKDAYS, planShiftDates } from "@/lib/shift-recurrence";
 
 type ShiftValues = {
   title: string;
@@ -11,8 +13,98 @@ type ShiftValues = {
   endTime?: string;
   location?: string | null;
   notes?: string | null;
-  repeatWeeks?: number;
 };
+
+function RecurrenceFields({
+  defaultStartDate,
+  onValidityChange,
+}: {
+  defaultStartDate?: string;
+  onValidityChange: (error: string | null) => void;
+}) {
+  const [startDate, setStartDate] = useState(defaultStartDate ?? "");
+  const [endDate, setEndDate] = useState("");
+  const [weekdays, setWeekdays] = useState<number[]>([]);
+
+  const plan = planShiftDates({ startDate, endDate, weekdays });
+
+  function update(next: { startDate?: string; endDate?: string; weekdays?: number[] }) {
+    const nextStart = next.startDate ?? startDate;
+    const nextEnd = next.endDate ?? endDate;
+    const nextWeekdays = next.weekdays ?? weekdays;
+    setStartDate(nextStart);
+    setEndDate(nextEnd);
+    setWeekdays(nextWeekdays);
+    onValidityChange(planShiftDates({ startDate: nextStart, endDate: nextEnd, weekdays: nextWeekdays }).error);
+  }
+
+  function toggleWeekday(day: number, checked: boolean) {
+    update({ weekdays: checked ? [...weekdays, day] : weekdays.filter((value) => value !== day) });
+  }
+
+  return (
+    <>
+      <label className="field">
+        วันที่เริ่ม
+        <input
+          name="startDate"
+          type="date"
+          required
+          value={startDate}
+          onChange={(event) => update({ startDate: event.target.value })}
+        />
+      </label>
+      <label className="field">
+        วันที่สิ้นสุด (ถ้าทำซ้ำ)
+        <input
+          name="endDate"
+          type="date"
+          min={startDate || undefined}
+          value={endDate}
+          onChange={(event) => update({ endDate: event.target.value })}
+        />
+      </label>
+      <fieldset className="field field-wide weekday-field">
+        <legend>ทำซ้ำทุกวัน</legend>
+        <div className="weekday-options">
+          {WEEKDAY_LABELS.map((label, day) => (
+            <label className="weekday-option" key={day}>
+              <input
+                type="checkbox"
+                name="weekdays"
+                value={day}
+                checked={weekdays.includes(day)}
+                onChange={(event) => toggleWeekday(day, event.target.checked)}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+          <button
+            className="button button-quiet button-sm"
+            type="button"
+            onClick={() => update({ weekdays: [...WORKING_WEEKDAYS] })}
+          >
+            จ-ศ
+          </button>
+          <button
+            className="button button-quiet button-sm"
+            type="button"
+            onClick={() => update({ weekdays: [] })}
+          >
+            ล้าง
+          </button>
+        </div>
+        <small className={plan.error ? "recurrence-preview recurrence-preview-hint" : "recurrence-preview"} aria-live="polite">
+          {plan.error
+            ? plan.error
+            : plan.dates.length === 1
+              ? `จะสร้าง 1 กะ วันที่ ${formatDate(plan.dates[0])}`
+              : `จะสร้าง ${plan.dates.length} กะ ตั้งแต่ ${formatDate(plan.dates[0])} ถึง ${formatDate(plan.dates[plan.dates.length - 1])}`}
+        </small>
+      </fieldset>
+    </>
+  );
+}
 
 export function ShiftForm({
   action,
@@ -24,6 +116,9 @@ export function ShiftForm({
   isCreate?: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(action, {});
+  const [recurrenceError, setRecurrenceError] = useState<string | null>(() =>
+    isCreate ? planShiftDates({ startDate: values?.date ?? "", endDate: "", weekdays: [] }).error : null,
+  );
 
   return (
     <form action={formAction} className="form-card">
@@ -43,29 +138,13 @@ export function ShiftForm({
             placeholder="เช่น กะเช้า, กะบ่าย, เวรดึก"
           />
         </label>
-        <label className="field">
-          วันที่
-          <input
-            name="date"
-            type="date"
-            required
-            defaultValue={values?.date}
-          />
-        </label>
         {isCreate ? (
-          <label className="field">
-            ทำซ้ำทุกสัปดาห์ (สัปดาห์)
-            <input
-              name="repeatWeeks"
-              type="number"
-              min={1}
-              max={26}
-              defaultValue={values?.repeatWeeks ?? 1}
-            />
-            <small>สร้างกะวันเดิมต่อเนื่องกัน 1 ถึง 26 สัปดาห์</small>
-          </label>
+          <RecurrenceFields defaultStartDate={values?.date} onValidityChange={setRecurrenceError} />
         ) : (
-          <div className="field" />
+          <label className="field field-wide">
+            วันที่
+            <input name="date" type="date" required defaultValue={values?.date} />
+          </label>
         )}
         <label className="field">
           เวลาเริ่ม
@@ -110,7 +189,7 @@ export function ShiftForm({
         <Link className="button button-quiet" href="/schedule">
           ยกเลิก
         </Link>
-        <button className="button button-primary" type="submit" disabled={isPending}>
+        <button className="button button-primary" type="submit" disabled={isPending || recurrenceError !== null}>
           {isPending ? "กำลังบันทึก…" : "บันทึกกะงาน"}
         </button>
       </div>
