@@ -70,6 +70,7 @@ model Subscription {
   updatedAt      DateTime           @updatedAt
   payments       Payment[]
   reminders      Reminder[]
+  expenseSlips   ExpenseSlip[]
 
   @@index([status, nextDueDate])
 }
@@ -145,4 +146,33 @@ model WorkShift {
   updatedAt DateTime @updatedAt
 
   @@index([date])
+}
+
+model ExpenseSlip {
+  id             String       @id @default(cuid())
+  driveFileId    String       @unique
+  fileName       String
+  contentType    String       @db.VarChar(20)
+  sizeBytes      Int
+  amount         Decimal      @db.Decimal(12, 2)
+  currency       String       @default("THB") @db.VarChar(3)
+  paidDate       DateTime     @db.Date
+  paidTime       String?      @db.VarChar(5)
+  payee          String?
+  category       String       @default("Other")
+  note           String?      @db.Text
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([paidDate])
+}
+
+model DriveConnection {
+  id                   String   @id @default("default")
+  encryptedRefreshToken String  @db.Text
+  folderId             String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

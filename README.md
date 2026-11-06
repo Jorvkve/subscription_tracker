@@ -1,13 +1,13 @@
 # Subscription Tracker
 
-Personal subscription manager built with Next.js, TypeScript, Supabase PostgreSQL, Prisma, and Google sign-in. The app has an in-app dashboard, billing calendar, reminder history, and Gmail SMTP reminders. It does not integrate with Google Calendar.
+Personal subscription manager built with Next.js, TypeScript, Supabase PostgreSQL, Prisma, and Google sign-in. The app has an in-app dashboard, billing calendar, reminder history, Gmail SMTP reminders, and expense slip management backed by Google Drive. It does not integrate with Google Calendar.
 
 ## Local setup
 
 1. Install Node.js 20.19 or newer and create a Supabase project.
 2. In Supabase **Database → Settings → SSL Configuration**, download the CA certificate and save it as `certs/supabase-ca.crt`. In **Connect**, copy the **Transaction pooler** URL (port `6543`) to `DATABASE_URL`. Keep `pgbouncer=true`; the project verifies TLS against the downloaded CA. URL-encode reserved characters in the database password.
 3. Copy `.env.example` to `.env`. Set `DIRECT_URL` to the Supabase **Direct connection** string for migrations. If the network cannot reach the direct endpoint, use the **Session pooler** string (port `5432`) instead; do not use the transaction pooler for migrations. The server reads the packaged CA file automatically; set `SUPABASE_DB_CA_BASE64` only if your host does not package that file. Then set `AUTH_SECRET`, Google OAuth credentials, `ALLOWED_GOOGLE_EMAILS`, and `CRON_SECRET`. For email, set a Google App Password in `SMTP_APP_PASSWORD`; `SMTP_USER` defaults to the first authorized Google account and can be overridden when the sender is a different account. `REMINDER_EMAIL_TO` defaults to the first authorized email.
-4. In Google OAuth settings, add `http://localhost:3000/api/auth/callback/google` as an authorized redirect URI.
+4. In Google OAuth settings, add `http://localhost:3000/api/auth/callback/google` and `http://localhost:3000/api/drive/callback` as authorized redirect URIs.
 5. Run `npm install`, then `npm run db:generate`.
 6. Apply the existing schema to the Supabase database with `npm run db:deploy`.
 7. Run `npm run dev` and open `http://localhost:3000`.
@@ -36,9 +36,21 @@ Google login requires a verified email listed in `ALLOWED_GOOGLE_EMAILS` as a co
 - Tasks have an optional due date, a priority, and a status. Completed tasks keep their original completion date when edited.
 - Shifts store a date with start and end times in app local time. An end time earlier than the start time means the shift ends the next day; it appears on its start date only. A new shift can repeat weekly for up to 26 weeks, creating one independent record per week.
 
+## Expense slips
+
+`/slips` lets you photograph payment slips and record the details by hand. Images are stored in the user's own Google Drive under the `drive.file` scope — the app can only see files it created itself.
+
+- **Connecting Google Drive**: visit `/api/drive/connect` or click the connect prompt on the Slips page. The OAuth flow stores an encrypted refresh token; access tokens are obtained per-operation and never persisted.
+- **Deleted images go to Drive Trash**, not permanently removed, so they can be recovered from Google Drive.
+- **Extra OAuth redirect URI**: add `/api/drive/callback` for each environment (e.g. `http://localhost:3000/api/drive/callback` and `https://<your-domain>/api/drive/callback`) to the Google OAuth authorised redirect URI list.
+- **Enable the Google Drive API** in the Google Cloud project that hosts the OAuth credentials.
+- **OAuth app must be in Production mode**: refresh tokens issued to apps in Testing mode expire after 7 days. Publish the app or add your account to the test-user list while in development, then switch to Production for deployment.
+
+**Planned**: OCR to pre-fill slip fields automatically (search code for `TODO(slip-ocr)`).
+
 ## Deployment
 
-Deploy the repository to Vercel and configure the environment variables above for each environment. For Gmail SMTP, enable 2-Step Verification and create a Google App Password; never use your normal Google password. Configure Google OAuth's production redirect URI as `https://<your-domain>/api/auth/callback/google`. `vercel.json` runs reminder generation daily at 01:00 Asia/Bangkok (18:00 UTC). The cron route requires `Authorization: Bearer <CRON_SECRET>`; Vercel Cron supplies this header when the same `CRON_SECRET` project variable is configured.
+Deploy the repository to Vercel and configure the environment variables above for each environment. For Gmail SMTP, enable 2-Step Verification and create a Google App Password; never use your normal Google password. Configure Google OAuth's production redirect URI as `https://<your-domain>/api/auth/callback/google` and `https://<your-domain>/api/drive/callback`. `vercel.json` runs reminder generation daily at 01:00 Asia/Bangkok (18:00 UTC). The cron route requires `Authorization: Bearer <CRON_SECRET>`; Vercel Cron supplies this header when the same `CRON_SECRET` project variable is configured.
 
 Create a Supabase project and configure Vercel's `DATABASE_URL` with the Supabase Transaction pooler string (port `6543`, with `pgbouncer=true`) for serverless application traffic. Keep `certs/supabase-ca.crt` in the deployment or set `SUPABASE_DB_CA_BASE64` in Vercel as a server-side override. Add the other server-side environment variables described above. Do not put `DIRECT_URL` in the browser or a `NEXT_PUBLIC_` variable. Run `npm run db:deploy` from a trusted machine with the CA file at `certs/supabase-ca.crt` and `DIRECT_URL` set to the Supabase Direct connection or Session pooler string. This applies checked-in migrations without creating a new migration. This project does not create a Supabase project or deploy itself.
 

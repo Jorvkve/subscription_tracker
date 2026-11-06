@@ -8,7 +8,7 @@ export function AppShell({
 }: {
   children: React.ReactNode;
   email: string;
-  active?: "overview" | "subscriptions" | "schedule" | "activity";
+  active?: "overview" | "subscriptions" | "schedule" | "activity" | "slips";
 }) {
   return (
     <div className="app-layout">
@@ -30,6 +30,9 @@ export function AppShell({
           </Link>
           <Link className={active === "activity" ? "nav-link active" : "nav-link"} href="/activity">
             <span className="nav-icon">◷</span> ประวัติและระบบ
+          </Link>
+          <Link className={active === "slips" ? "nav-link active" : "nav-link"} href="/slips">
+            <span className="nav-icon">🧾</span> สลิปค่าใช้จ่าย
           </Link>
         </nav>
         <div className="sidebar-bottom">
