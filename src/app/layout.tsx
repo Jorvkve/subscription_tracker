@@ -1,6 +1,19 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { IBM_Plex_Sans_Thai } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
+
+const sans = IBM_Plex_Sans_Thai({
+  subsets: ["thai", "latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-sans",
+});
+
+export const viewport: Viewport = {
+  themeColor: "#0b0e14",
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   title: "Subtrack — Subscription Tracker",
@@ -8,5 +21,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  return <html lang="th"><body>{children}</body></html>;
+  return <html lang="th" className={sans.variable}><body>{children}</body></html>;
 }

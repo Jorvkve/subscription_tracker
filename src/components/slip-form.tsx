@@ -70,7 +70,7 @@ export function SlipForm({
               onChange={handleFileChange}
             />
             {fileError && (
-              <small style={{ color: "var(--red)" }}>{fileError}</small>
+              <small className="text-danger">{fileError}</small>
             )}
             <small>รองรับ JPEG, PNG, WebP ขนาดไม่เกิน 4 MB</small>
           </label>

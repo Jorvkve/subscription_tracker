@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowLeftIcon } from "@/components/icons";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
@@ -55,7 +56,7 @@ export default async function SlipDetailPage({
       <header className="page-header detail-header">
         <div>
           <Link className="back-link" href="/slips">
-            ← สลิปค่าใช้จ่าย
+            <ArrowLeftIcon aria-hidden /> สลิปค่าใช้จ่าย
           </Link>
           <div className="detail-title">
             <div>
@@ -81,13 +82,9 @@ export default async function SlipDetailPage({
           <img
             src={`/api/slips/${id}/image`}
             alt={slip.fileName}
-            style={{
-              maxWidth: "100%",
-              borderRadius: "8px",
-              border: "1px solid var(--line)",
-            }}
+            className="slip-full-image"
           />
-          <dl className="detail-list" style={{ marginTop: "16px" }}>
+          <dl className="detail-list slip-detail-list">
             <div>
               <dt>ชื่อไฟล์</dt>
               <dd>{slip.fileName}</dd>

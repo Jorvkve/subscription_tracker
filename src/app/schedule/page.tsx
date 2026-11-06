@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CalendarBlankIcon, CaretLeftIcon, CaretRightIcon, ClockIcon, MapPinIcon, PlusIcon } from "@/components/icons";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
@@ -112,10 +113,10 @@ export default async function SchedulePage({
         </div>
         <div className="header-actions">
           <Link className="button button-secondary" href="/schedule/shifts/new">
-            ＋ เพิ่มกะงาน
+            <PlusIcon aria-hidden /> เพิ่มกะงาน
           </Link>
           <Link className="button button-primary" href="/schedule/tasks/new">
-            ＋ เพิ่มงาน
+            <PlusIcon aria-hidden /> เพิ่มงาน
           </Link>
         </div>
       </header>
@@ -238,7 +239,7 @@ export default async function SchedulePage({
                 href={`/schedule?month=${shiftMonth(currentMonth, -1)}`}
                 aria-label="เดือนก่อนหน้า"
               >
-                ‹
+                <CaretLeftIcon aria-hidden />
               </Link>
               <span className="month-indicator">{monthTitle(currentMonth)}</span>
               <Link
@@ -246,14 +247,14 @@ export default async function SchedulePage({
                 href={`/schedule?month=${shiftMonth(currentMonth, 1)}`}
                 aria-label="เดือนถัดไป"
               >
-                ›
+                <CaretRightIcon aria-hidden />
               </Link>
             </nav>
           </div>
 
           {sortedShiftDates.length === 0 ? (
             <div className="empty-callout">
-              <div className="empty-icon">📅</div>
+              <div className="empty-icon"><CalendarBlankIcon aria-hidden /></div>
               <div>
                 <strong>ยังไม่มีกะงานในเดือน{monthTitle(currentMonth)}</strong>
                 <p>กดเพิ่มกะงานเพื่อบันทึกวันและเวลากะงานของคุณ</p>
@@ -291,12 +292,12 @@ export default async function SchedulePage({
                               </Link>
                               <div className="shift-meta">
                                 <span className="shift-time">
-                                  🕒 {shift.startTime} - {shift.endTime} (
+                                  <ClockIcon aria-hidden /> {shift.startTime} - {shift.endTime} (
                                   {formatDuration(duration)})
                                 </span>
                                 {shift.location && (
                                   <span className="shift-location">
-                                    📍 {shift.location}
+                                    <MapPinIcon aria-hidden /> {shift.location}
                                   </span>
                                 )}
                               </div>

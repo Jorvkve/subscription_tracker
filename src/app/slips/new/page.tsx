@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowLeftIcon, ArrowRightIcon, FolderIcon } from "@/components/icons";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
@@ -27,7 +28,7 @@ export default async function NewSlipPage() {
       <header className="page-header compact-header">
         <div>
           <Link className="back-link" href="/slips">
-            ← สลิปค่าใช้จ่าย
+            <ArrowLeftIcon aria-hidden /> สลิปค่าใช้จ่าย
           </Link>
           <h1>เพิ่มสลิปใหม่</h1>
           <p className="muted">อัปโหลดรูปสลิปและกรอกรายละเอียดการชำระเงิน</p>
@@ -35,14 +36,14 @@ export default async function NewSlipPage() {
       </header>
 
       {!isConnected && (
-        <div className="empty-callout" style={{ marginBottom: "20px" }}>
-          <div className="empty-icon">📁</div>
+        <div className="empty-callout stack-gap">
+          <div className="empty-icon"><FolderIcon aria-hidden /></div>
           <div>
             <strong>ต้องเชื่อมต่อ Google Drive ก่อนเพิ่มสลิป</strong>
             <p>
               สลิปจะถูกเก็บในไฟล์ Google Drive ของคุณ{" "}
               <Link className="text-link" href="/api/drive/connect">
-                เชื่อมต่อ Google Drive →
+                เชื่อมต่อ Google Drive <ArrowRightIcon aria-hidden />
               </Link>
             </p>
           </div>
@@ -52,7 +53,7 @@ export default async function NewSlipPage() {
       {isConnected ? (
         <>
           <SlipForm action={createSlip} subscriptions={subscriptions} />
-          <p className="muted" style={{ marginTop: "12px" }}>
+          <p className="muted form-footnote">
             อัปโหลดไม่ได้เพราะการเชื่อมต่อหมดอายุ?{" "}
             <Link className="text-link" href="/api/drive/connect">
               เชื่อมต่อ Google Drive ใหม่
@@ -61,7 +62,7 @@ export default async function NewSlipPage() {
         </>
       ) : (
         <div className="form-card">
-          <p className="muted" style={{ textAlign: "center", padding: "24px 0" }}>
+          <p className="muted form-blocked-note">
             กรุณาเชื่อมต่อ Google Drive เพื่อเพิ่มสลิป
           </p>
         </div>

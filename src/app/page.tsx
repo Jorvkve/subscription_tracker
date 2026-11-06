@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowRightIcon, ArrowsClockwiseIcon, BellIcon, CalendarBlankIcon, CheckIcon, ClockIcon, ListBulletsIcon, PlusIcon } from "@/components/icons";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { markReminderRead } from "@/app/actions";
@@ -139,37 +140,37 @@ export default async function DashboardPage({
     <AppShell email={session.user.email}>
       <header className="page-header dashboard-header">
         <div><p className="eyebrow">ภาพรวมการสมัครใช้งาน</p><h1>ภาพรวม</h1><p className="muted">ติดตามค่าใช้จ่ายและวันครบกำหนดของคุณ</p></div>
-        <Link className="button button-primary" href="/subscriptions/new"><span aria-hidden="true">＋</span> เพิ่มรายการ</Link>
+        <Link className="button button-primary" href="/subscriptions/new"><PlusIcon aria-hidden /> เพิ่มรายการ</Link>
       </header>
 
       <section className="metric-grid" aria-label="สรุปค่าใช้จ่าย">
         {Object.entries(totals).map(([currency, total]) => (
           <article className="metric-card" key={currency}>
-            <div className="metric-top"><span className="metric-icon violet">↻</span><span className="metric-label">ค่าใช้จ่ายเฉลี่ย / เดือน</span></div>
+            <div className="metric-top"><span className="metric-icon violet"><ArrowsClockwiseIcon aria-hidden /></span><span className="metric-label">ค่าใช้จ่ายเฉลี่ย / เดือน</span></div>
             <strong className="metric-value">{money(total.monthly, currency)}</strong>
             <span className="metric-sub">คำนวณจากรอบบิลของแต่ละรายการ</span>
           </article>
         ))}
         {Object.entries(totals).map(([currency, total]) => (
           <article className="metric-card" key={`annual-${currency}`}>
-            <div className="metric-top"><span className="metric-icon blue">▥</span><span className="metric-label">ค่าใช้จ่ายเฉลี่ย / ปี</span></div>
+            <div className="metric-top"><span className="metric-icon blue"><CalendarBlankIcon aria-hidden /></span><span className="metric-label">ค่าใช้จ่ายเฉลี่ย / ปี</span></div>
             <strong className="metric-value">{money(total.annual, currency)}</strong>
             <span className="metric-sub">ประมาณการ 12 เดือน</span>
           </article>
         ))}
         <article className="metric-card">
-          <div className="metric-top"><span className="metric-icon green">▤</span><span className="metric-label">กำลังใช้งาน</span></div>
+          <div className="metric-top"><span className="metric-icon green"><ListBulletsIcon aria-hidden /></span><span className="metric-label">กำลังใช้งาน</span></div>
           <strong className="metric-value">{active.length}<small> รายการ</small></strong>
           <span className="metric-sub">จาก Subscription ที่ยัง Active</span>
         </article>
         <article className="metric-card">
-          <div className="metric-top"><span className="metric-icon amber">◷</span><span className="metric-label">ครบกำหนดใน 7 วัน</span></div>
+          <div className="metric-top"><span className="metric-icon amber"><ClockIcon aria-hidden /></span><span className="metric-label">ครบกำหนดใน 7 วัน</span></div>
           <strong className="metric-value">{next7.length}<small> รายการ</small></strong>
           <span className="metric-sub">มีอีก {next30.length} รายการใน 30 วัน</span>
         </article>
       </section>
 
-      {Object.keys(totals).length === 0 && <section className="empty-callout"><div className="empty-icon">＋</div><div><strong>เริ่มติดตาม Subscription แรกของคุณ</strong><p>เพิ่มบริการและกำหนดรอบบิล เพื่อดูยอดรวมและการแจ้งเตือนที่นี่</p></div><Link className="button button-primary" href="/subscriptions/new">เพิ่มรายการ</Link></section>}
+      {Object.keys(totals).length === 0 && <section className="empty-callout"><div className="empty-icon"><PlusIcon aria-hidden /></div><div><strong>เริ่มติดตาม Subscription แรกของคุณ</strong><p>เพิ่มบริการและกำหนดรอบบิล เพื่อดูยอดรวมและการแจ้งเตือนที่นี่</p></div><Link className="button button-primary" href="/subscriptions/new">เพิ่มรายการ</Link></section>}
 
       <DashboardCalendar
         key={calendarMonth}
@@ -181,7 +182,7 @@ export default async function DashboardPage({
 
       <div className="dashboard-columns">
         <section className="panel">
-          <div className="panel-heading"><div><p className="eyebrow">NEXT 30 DAYS</p><h2>กำหนดชำระใกล้ถึง</h2></div><Link className="text-link" href="/subscriptions">ดูทั้งหมด <span aria-hidden="true">→</span></Link></div>
+          <div className="panel-heading"><div><p className="eyebrow">NEXT 30 DAYS</p><h2>กำหนดชำระใกล้ถึง</h2></div><Link className="text-link" href="/subscriptions">ดูทั้งหมด <ArrowRightIcon aria-hidden /></Link></div>
           {overdue.length > 0 && <div className="overdue-banner"><span>!</span><div><strong>มีรายการเลยกำหนด {overdue.length} รายการ</strong><p>ระบบจะเลื่อนวันครบกำหนดเมื่อคุณบันทึกว่าจ่ายแล้วเท่านั้น</p></div></div>}
           {next30.length === 0 && overdue.length === 0 ? <p className="empty-note">ยังไม่มีรายการครบกำหนดใน 30 วัน</p> : <div className="due-list">{[...overdue, ...next30].map((subscription) => {
             const due = dateOnly(subscription.nextDueDate);
@@ -191,8 +192,8 @@ export default async function DashboardPage({
         </section>
 
         <section className="panel reminder-panel">
-          <div className="panel-heading"><div><p className="eyebrow">IN-APP REMINDERS</p><h2>การแจ้งเตือน</h2></div><div className="panel-heading-actions"><span className="count-pill">{unreadReminderCount}</span><Link className="text-link" href="/activity">ประวัติ →</Link></div></div>
-          {currentReminders.length === 0 ? <div className="reminder-empty"><span className="bell-icon">♧</span><strong>ไม่มีการแจ้งเตือนใหม่</strong><p>รายการเตือนล่วงหน้า 7, 3 และ 1 วันจะแสดงที่นี่</p></div> : <div className="reminder-list">{currentReminders.map((reminder) => <div className="reminder-item" key={reminder.id}><span className="reminder-dot"/><div><strong>{reminder.subscription.name}</strong><p>ครบกำหนด {formatDate(reminder.dueDate)} · อีก {reminder.daysBefore} วัน</p></div><form action={markReminderRead.bind(null, reminder.id)}><button className="icon-button" aria-label="ทำเครื่องหมายว่าอ่านแล้ว" title="ทำเครื่องหมายว่าอ่านแล้ว" type="submit">✓</button></form></div>)}</div>}
+          <div className="panel-heading"><div><p className="eyebrow">IN-APP REMINDERS</p><h2>การแจ้งเตือน</h2></div><div className="panel-heading-actions"><span className="count-pill">{unreadReminderCount}</span><Link className="text-link" href="/activity">ประวัติ <ArrowRightIcon aria-hidden /></Link></div></div>
+          {currentReminders.length === 0 ? <div className="reminder-empty"><span className="bell-icon"><BellIcon aria-hidden /></span><strong>ไม่มีการแจ้งเตือนใหม่</strong><p>รายการเตือนล่วงหน้า 7, 3 และ 1 วันจะแสดงที่นี่</p></div> : <div className="reminder-list">{currentReminders.map((reminder) => <div className="reminder-item" key={reminder.id}><span className="reminder-dot"/><div><strong>{reminder.subscription.name}</strong><p>ครบกำหนด {formatDate(reminder.dueDate)} · อีก {reminder.daysBefore} วัน</p></div><form action={markReminderRead.bind(null, reminder.id)}><button className="icon-button" aria-label="ทำเครื่องหมายว่าอ่านแล้ว" title="ทำเครื่องหมายว่าอ่านแล้ว" type="submit"><CheckIcon aria-hidden /></button></form></div>)}</div>}
           {overdue.length > 0 && <div className="reminder-hint">เมื่อชำระแล้ว ให้เปิดรายการและกด “บันทึกว่าจ่ายแล้ว” เพื่อเลื่อนรอบถัดไป</div>}
         </section>
       </div>

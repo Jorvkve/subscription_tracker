@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowRightIcon, CaretLeftIcon, CaretRightIcon, FolderIcon, PlusIcon } from "@/components/icons";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
@@ -85,37 +86,37 @@ export default async function SlipsPage({
           </p>
         </div>
         <Link className="button button-primary" href="/slips/new">
-          ＋ เพิ่มสลิป
+          <PlusIcon aria-hidden /> เพิ่มสลิป
         </Link>
       </header>
 
       {query.drive === "connected" && (
-        <div className="success-banner" style={{ marginBottom: "16px" }}>
+        <div className="success-banner stack-gap">
           เชื่อมต่อ Google Drive สำเร็จแล้ว
         </div>
       )}
       {query.drive === "error" && (
-        <div className="error-banner" style={{ marginBottom: "16px" }}>
+        <div className="error-banner stack-gap">
           เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive กรุณาลองใหม่อีกครั้ง
         </div>
       )}
 
       {!isConnected && (
-        <div className="empty-callout" style={{ marginBottom: "16px" }}>
-          <div className="empty-icon">📁</div>
+        <div className="empty-callout stack-gap">
+          <div className="empty-icon"><FolderIcon aria-hidden /></div>
           <div>
             <strong>ยังไม่ได้เชื่อมต่อ Google Drive</strong>
             <p>
               สลิปจะถูกเก็บในไฟล์ Google Drive ของคุณ{" "}
               <Link className="text-link" href="/api/drive/connect">
-                เชื่อมต่อ Google Drive →
+                เชื่อมต่อ Google Drive <ArrowRightIcon aria-hidden />
               </Link>
             </p>
           </div>
         </div>
       )}
 
-      <section className="panel" style={{ marginBottom: "16px" }}>
+      <section className="panel stack-gap">
         <div className="panel-heading">
           <div>
             <h2>
@@ -123,7 +124,7 @@ export default async function SlipsPage({
               <span className="subtle-count">({slips.length} รายการ)</span>
             </h2>
             {Object.keys(totals).length > 0 && (
-              <p className="muted" style={{ marginTop: "4px" }}>
+              <p className="muted slip-total">
                 รวม:{" "}
                 {Object.entries(totals)
                   .map(([cur, amt]) => `${amt.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`)
@@ -131,13 +132,13 @@ export default async function SlipsPage({
               </p>
             )}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div className="month-switcher">
             <Link className="button button-secondary button-sm" href={`/slips?month=${prevMonth}`}>
-              ‹
+              <CaretLeftIcon aria-hidden />
             </Link>
             <span className="month-indicator">{monthTitle(monthLabel)}</span>
             <Link className="button button-secondary button-sm" href={`/slips?month=${nextMonth}`}>
-              ›
+              <CaretRightIcon aria-hidden />
             </Link>
           </div>
         </div>
@@ -146,7 +147,7 @@ export default async function SlipsPage({
           <div className="empty-note large-empty">
             ยังไม่มีสลิปในเดือนนี้{" "}
             <Link className="text-link" href="/slips/new">
-              เพิ่มสลิปแรก →
+              เพิ่มสลิปแรก <ArrowRightIcon aria-hidden />
             </Link>
           </div>
         ) : (
@@ -182,7 +183,7 @@ export default async function SlipsPage({
                   {slip.currency}
                 </div>
                 <Link className="text-link" href={`/slips/${slip.id}`}>
-                  รายละเอียด →
+                  รายละเอียด <ArrowRightIcon aria-hidden />
                 </Link>
               </div>
             ))}

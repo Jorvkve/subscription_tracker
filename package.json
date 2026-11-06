@@ -19,6 +19,7 @@
     "db:deploy": "prisma migrate deploy"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@prisma/adapter-pg": "^7.0.0",
     "@prisma/client": "^7.0.0",
     "dotenv": "^17.2.3",

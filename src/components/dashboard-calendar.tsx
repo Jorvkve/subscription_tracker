@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CaretLeftIcon, CaretRightIcon } from "@/components/icons";
 import { useState } from "react";
 import type { CalendarEvent, ScheduleEvent } from "@/lib/calendar";
 import { calendarGrid } from "@/lib/calendar";
@@ -110,7 +111,7 @@ export function DashboardCalendar({
             href={`/?month=${shiftMonth(month, -1)}`}
             aria-label="เดือนก่อนหน้า"
           >
-            ‹
+            <CaretLeftIcon aria-hidden />
           </Link>
           <Link className="calendar-today-button" href="/">
             เดือนนี้
@@ -120,7 +121,7 @@ export function DashboardCalendar({
             href={`/?month=${shiftMonth(month, 1)}`}
             aria-label="เดือนถัดไป"
           >
-            ›
+            <CaretRightIcon aria-hidden />
           </Link>
         </nav>
       </div>

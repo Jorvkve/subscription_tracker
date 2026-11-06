@@ -1,0 +1,21 @@
+// The SSR build of Phosphor works in both server and client components.
+export {
+  ArrowLeft as ArrowLeftIcon,
+  ArrowRight as ArrowRightIcon,
+  ArrowsClockwise as ArrowsClockwiseIcon,
+  Bell as BellIcon,
+  CalendarBlank as CalendarBlankIcon,
+  CalendarDots as CalendarDotsIcon,
+  CaretLeft as CaretLeftIcon,
+  CaretRight as CaretRightIcon,
+  Check as CheckIcon,
+  ClockCounterClockwise as ClockCounterClockwiseIcon,
+  Clock as ClockIcon,
+  Folder as FolderIcon,
+  ListBullets as ListBulletsIcon,
+  MapPin as MapPinIcon,
+  Plus as PlusIcon,
+  Receipt as ReceiptIcon,
+  SignOut as SignOutIcon,
+  SquaresFour as SquaresFourIcon,
+} from "@phosphor-icons/react/dist/ssr";
