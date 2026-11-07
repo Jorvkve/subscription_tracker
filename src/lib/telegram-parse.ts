@@ -81,6 +81,74 @@ export function decodeCategoryCallback(data: string): { expenseId: string; key: 
   return { expenseId: match[1], key: match[2] };
 }
 
+export type DeleteCallback =
+  | { action: "pick"; expenseId: string }
+  | { action: "confirm"; expenseId: string }
+  | { action: "cancel" };
+
+const DELETE_PATTERN = /^(del|delok):([a-z0-9]{20,32})$/;
+
+export function encodeDeleteCallback(callback: DeleteCallback): string {
+  if (callback.action === "cancel") return "delno";
+  return `${callback.action === "pick" ? "del" : "delok"}:${callback.expenseId}`;
+}
+
+export function decodeDeleteCallback(data: string): DeleteCallback | null {
+  if (data === "delno") return { action: "cancel" };
+  const match = DELETE_PATTERN.exec(data);
+  if (!match) return null;
+  return { action: match[1] === "del" ? "pick" : "confirm", expenseId: match[2] };
+}
+
+export type DeletableExpense = {
+  id: string;
+  paidDate: string;
+  paidTime: string | null;
+  title: string | null;
+  amount: number;
+  hasImage: boolean;
+};
+
+/** One line that names an expense: date only when it is not today. */
+export function describeExpense(expense: DeletableExpense, today: string, maxTitle = 24): string {
+  const when = [
+    expense.paidDate === today
+      ? null
+      : new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", timeZone: "UTC" }).format(
+          new Date(`${expense.paidDate}T00:00:00.000Z`),
+        ),
+    expense.paidTime,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const title = expense.title ? expense.title.slice(0, maxTitle) + (expense.title.length > maxTitle ? "…" : "") : "ไม่ระบุ";
+  return [when || null, title, `${formatBaht(expense.amount)} บาท`, expense.hasImage ? "มีรูป" : null]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export function buildDeletePicker(expenses: readonly DeletableExpense[], today: string): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      ...expenses.map((expense) => [
+        { text: describeExpense(expense, today), callback_data: encodeDeleteCallback({ action: "pick", expenseId: expense.id }) },
+      ]),
+      [{ text: "ปิด", callback_data: encodeDeleteCallback({ action: "cancel" }) }],
+    ],
+  };
+}
+
+export function buildDeleteConfirm(expenseId: string): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: "ยืนยันลบ", callback_data: encodeDeleteCallback({ action: "confirm", expenseId }) },
+        { text: "ยกเลิก", callback_data: encodeDeleteCallback({ action: "cancel" }) },
+      ],
+    ],
+  };
+}
+
 export function buildCategoryKeyboard(expenseId: string): InlineKeyboard {
   const buttons = EXPENSE_CATEGORIES.map((category) => ({
     text: category.label,
@@ -166,7 +234,7 @@ export const HELP_TEXT = [
   "คำสั่ง",
   "/today ดูรายการวันนี้",
   "/month สรุปเดือนนี้",
-  "/undo ยกเลิกรายการล่าสุด",
+  "/undo เลือกรายการที่จะลบ",
 ].join("\n");
 
 export const FORMAT_HINT = "พิมพ์ชื่อรายการกับยอดเงิน เช่น ข้าว 60 หรือพิมพ์ /help";

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCategoryKeyboard,
+  buildDeletePicker,
   decodeCategoryCallback,
+  decodeDeleteCallback,
+  describeExpense,
   encodeCategoryCallback,
+  encodeDeleteCallback,
   formatBaht,
   formatDaySummary,
   formatMonthSummary,
@@ -70,6 +74,43 @@ describe("category callbacks", () => {
     const rows = buildCategoryKeyboard(id).inline_keyboard;
     expect(rows.map((row) => row.length)).toEqual([4, 3]);
     expect(rows[0][0]).toEqual({ text: "อาหาร", callback_data: `cat:${id}:food` });
+  });
+});
+
+describe("delete callbacks", () => {
+  const id = "cmh7k2x9b0000abcd1234efgh";
+
+  it("round-trips each action within 64 bytes", () => {
+    for (const callback of [
+      { action: "pick", expenseId: id },
+      { action: "confirm", expenseId: id },
+      { action: "cancel" },
+    ] as const) {
+      const data = encodeDeleteCallback(callback);
+      expect(new TextEncoder().encode(data).length).toBeLessThanOrEqual(64);
+      expect(decodeDeleteCallback(data)).toEqual(callback);
+    }
+  });
+
+  it("does not mistake category callbacks or junk for deletes", () => {
+    expect(decodeDeleteCallback(`cat:${id}:food`)).toBeNull();
+    expect(decodeDeleteCallback("del:short")).toBeNull();
+    expect(decodeDeleteCallback("delok:")).toBeNull();
+  });
+
+  it("describes an entry, adding the date only when it is not today", () => {
+    const entry = { id, paidDate: "2026-11-07", paidTime: "12:30", title: "ข้าว", amount: 60, hasImage: false };
+    expect(describeExpense(entry, "2026-11-07")).toBe("12:30 · ข้าว · 60.00 บาท");
+    expect(describeExpense({ ...entry, hasImage: true }, "2026-11-08")).toBe("7 พ.ย. 12:30 · ข้าว · 60.00 บาท · มีรูป");
+    expect(describeExpense({ ...entry, title: "ก".repeat(30) }, "2026-11-07")).toContain("…");
+  });
+
+  it("builds one button per entry plus a close button", () => {
+    const entry = { id, paidDate: "2026-11-07", paidTime: null, title: null, amount: 45, hasImage: false };
+    const rows = buildDeletePicker([entry, { ...entry, id: "cmh7k2x9b0000abcd1234zzzz" }], "2026-11-07").inline_keyboard;
+    expect(rows).toHaveLength(3);
+    expect(rows[0][0]).toEqual({ text: "ไม่ระบุ · 45.00 บาท", callback_data: `del:${id}` });
+    expect(rows[2][0].callback_data).toBe("delno");
   });
 });
 

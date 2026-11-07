@@ -124,15 +124,75 @@ describe("handleTelegramUpdate", () => {
     expect(answerCallbackQuery).toHaveBeenCalledWith("cb", "ไม่พบรายการ");
   });
 
-  it("undoes the latest Telegram expense and trashes its image", async () => {
-    db.expenseSlip.findFirst.mockResolvedValue({ id: EXPENSE_ID, amount: 60, note: "ข้าว", driveFileId: "drive-1" });
+  const storedRow = {
+    id: EXPENSE_ID,
+    amount: 60,
+    paidDate: new Date("2026-11-07T00:00:00.000Z"),
+    paidTime: "12:30",
+    payee: null,
+    note: "ข้าว",
+    driveFileId: "drive-1",
+    source: "TELEGRAM",
+  };
+
+  function deleteTap(data: string, updateId: number) {
+    return {
+      update_id: updateId,
+      callback_query: { id: "cb", data, message: { message_id: 20, chat: { id: OWNER, type: "private" }, text: "เลือกรายการที่จะลบ" } },
+    };
+  }
+
+  it("lists recent bot entries to pick from instead of deleting", async () => {
+    db.expenseSlip.findMany.mockResolvedValue([storedRow]);
     await handleTelegramUpdate(textUpdate("/undo"), config);
-    expect(db.expenseSlip.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ source: "TELEGRAM" }) }),
+    expect(db.expenseSlip.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ source: "TELEGRAM" }), take: 8 }),
     );
+    expect(db.expenseSlip.delete).not.toHaveBeenCalled();
+    const keyboard = vi.mocked(sendMessage).mock.calls[0][2]!.inline_keyboard;
+    expect(keyboard[0][0].callback_data).toBe(`del:${EXPENSE_ID}`);
+    expect(keyboard.at(-1)![0]).toEqual({ text: "ปิด", callback_data: "delno" });
+  });
+
+  it("says so when there is nothing to delete", async () => {
+    db.expenseSlip.findMany.mockResolvedValue([]);
+    await handleTelegramUpdate(textUpdate("/undo"), config);
+    expect(sendMessage).toHaveBeenCalledWith(OWNER, "ไม่มีรายการจากบอทใน 7 วันที่ผ่านมา");
+  });
+
+  it("asks for confirmation after a pick, without deleting yet", async () => {
+    db.expenseSlip.findUnique.mockResolvedValue(storedRow);
+    await handleTelegramUpdate(deleteTap(`del:${EXPENSE_ID}`, 7), config);
+    expect(db.expenseSlip.delete).not.toHaveBeenCalled();
+    expect(editMessageText).toHaveBeenCalledWith(
+      OWNER,
+      20,
+      expect.stringContaining("ลบรายการนี้?"),
+      expect.objectContaining({
+        inline_keyboard: [[expect.objectContaining({ callback_data: `delok:${EXPENSE_ID}` }), expect.objectContaining({ callback_data: "delno" })]],
+      }),
+    );
+  });
+
+  it("deletes the confirmed entry and trashes its image", async () => {
+    db.expenseSlip.findUnique.mockResolvedValue(storedRow);
+    await handleTelegramUpdate(deleteTap(`delok:${EXPENSE_ID}`, 8), config);
     expect(db.expenseSlip.delete).toHaveBeenCalledWith({ where: { id: EXPENSE_ID } });
     expect(trashSlip).toHaveBeenCalledWith("drive-1");
-    expect(sendMessage).toHaveBeenCalledWith(OWNER, "ยกเลิกแล้ว: 60.00 บาท · ข้าว");
+    expect(editMessageText).toHaveBeenCalledWith(OWNER, 20, expect.stringContaining("ลบแล้ว"), { inline_keyboard: [] });
+  });
+
+  it("does not delete an entry made on the web", async () => {
+    db.expenseSlip.findUnique.mockResolvedValue({ ...storedRow, source: "WEB" });
+    await handleTelegramUpdate(deleteTap(`delok:${EXPENSE_ID}`, 9), config);
+    expect(db.expenseSlip.delete).not.toHaveBeenCalled();
+    expect(answerCallbackQuery).toHaveBeenCalledWith("cb", "รายการนี้ถูกลบไปแล้ว");
+  });
+
+  it("closes the picker on cancel", async () => {
+    await handleTelegramUpdate(deleteTap("delno", 10), config);
+    expect(db.expenseSlip.delete).not.toHaveBeenCalled();
+    expect(editMessageText).toHaveBeenCalledWith(OWNER, 20, "ไม่ได้ลบรายการใด", { inline_keyboard: [] });
   });
 
   it("asks for an amount when a photo has no caption, without downloading it", async () => {

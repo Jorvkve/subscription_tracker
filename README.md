@@ -69,7 +69,7 @@ Usage:
 
 - `ข้าว 60`, `60 กาแฟ`, `ค่าเช่า 1,200`, `฿45.50`: the amount may come first or last, and Thai digits work. The bot saves it for today and offers category buttons.
 - A slip photo with a caption such as `350 ค่าไฟ`, or a reply to an earlier photo with the amount: the image is stored in Drive like web uploads, so Google Drive must be connected on `/slips`.
-- `/today`, `/month` (expenses by category, plus subscription payments), `/undo` (removes the latest bot entry from the last 24 hours and moves its image to Drive trash), `/help`.
+- `/today`, `/month` (expenses by category, plus subscription payments), `/undo` (lists up to 8 bot entries from the last 7 days as buttons; picking one asks for confirmation, then deletes it and moves its image to Drive trash), `/help`.
 
 Each update id is recorded in `TelegramUpdate`, so Telegram retries never create duplicates.
 

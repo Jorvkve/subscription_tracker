@@ -18,7 +18,11 @@ import {
   FORMAT_HINT,
   HELP_TEXT,
   buildCategoryKeyboard,
+  buildDeleteConfirm,
+  buildDeletePicker,
   decodeCategoryCallback,
+  decodeDeleteCallback,
+  describeExpense,
   formatBaht,
   formatDaySummary,
   formatMonthSummary,
@@ -27,6 +31,7 @@ import {
   pickImage,
   type BotCommand,
   type ImageRef,
+  type InlineKeyboard,
   type ParsedExpense,
   type TgCallbackQuery,
   type TgMessage,
@@ -34,7 +39,8 @@ import {
 } from "@/lib/telegram-parse";
 
 const MAX_TELEGRAM_IMAGE_BYTES = 10 * 1024 * 1024;
-const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000;
+const UNDO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const UNDO_LIST_SIZE = 8;
 const DEFAULT_CATEGORY = categoryLabel("other") ?? "อื่นๆ";
 
 function isUpdate(value: unknown): value is TgUpdate {
@@ -188,6 +194,9 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
 }
 
 async function handleCallback(callback: TgCallbackQuery, chatId: number) {
+  const deletion = decodeDeleteCallback(callback.data ?? "");
+  if (deletion) return handleDeleteCallback(callback, chatId, deletion);
+
   const decoded = decodeCategoryCallback(callback.data ?? "");
   const label = decoded ? categoryLabel(decoded.key) : null;
   const db = getPrisma();
@@ -212,7 +221,7 @@ async function handleCommand(command: BotCommand, chatId: number) {
   if (command === "start" || command === "help") return sendMessage(chatId, HELP_TEXT);
   if (command === "today") return sendToday(chatId);
   if (command === "month") return sendMonth(chatId);
-  return undoLatest(chatId);
+  return sendDeletePicker(chatId);
 }
 
 async function sendToday(chatId: number) {
@@ -266,19 +275,80 @@ async function sendMonth(chatId: number) {
   );
 }
 
-async function undoLatest(chatId: number) {
-  const db = getPrisma();
-  const latest = await db.expenseSlip.findFirst({
+const DELETABLE_SELECT = {
+  id: true,
+  amount: true,
+  paidDate: true,
+  paidTime: true,
+  payee: true,
+  note: true,
+  driveFileId: true,
+  source: true,
+} as const;
+
+type DeletableRow = {
+  id: string;
+  amount: unknown;
+  paidDate: Date;
+  paidTime: string | null;
+  payee: string | null;
+  note: string | null;
+  driveFileId: string | null;
+};
+
+function toDeletable(row: DeletableRow) {
+  return {
+    id: row.id,
+    paidDate: row.paidDate.toISOString().slice(0, 10),
+    paidTime: row.paidTime,
+    title: row.payee || row.note,
+    amount: Number(row.amount),
+    hasImage: Boolean(row.driveFileId),
+  };
+}
+
+/** Lists recent bot entries as buttons; deleting takes a second confirming tap. */
+async function sendDeletePicker(chatId: number) {
+  const rows = await getPrisma().expenseSlip.findMany({
     where: { source: "TELEGRAM", createdAt: { gte: new Date(Date.now() - UNDO_WINDOW_MS) } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, amount: true, note: true, driveFileId: true },
+    take: UNDO_LIST_SIZE,
+    select: DELETABLE_SELECT,
   });
-  if (!latest) return sendMessage(chatId, "ไม่มีรายการให้ยกเลิก");
+  if (rows.length === 0) return sendMessage(chatId, "ไม่มีรายการจากบอทใน 7 วันที่ผ่านมา");
+  await sendMessage(chatId, "เลือกรายการที่จะลบ", buildDeletePicker(rows.map(toDeletable), appDateString()));
+}
 
-  await db.expenseSlip.delete({ where: { id: latest.id } });
+async function handleDeleteCallback(
+  callback: TgCallbackQuery,
+  chatId: number,
+  deletion: NonNullable<ReturnType<typeof decodeDeleteCallback>>,
+) {
+  const messageId = callback.message?.message_id;
+  const edit = (text: string, keyboard: InlineKeyboard = { inline_keyboard: [] }) =>
+    messageId === undefined ? Promise.resolve() : editMessageText(chatId, messageId, text, keyboard).catch(() => undefined);
+
+  if (deletion.action === "cancel") {
+    await answerCallbackQuery(callback.id);
+    return edit("ไม่ได้ลบรายการใด");
+  }
+
+  const db = getPrisma();
+  const row = await db.expenseSlip.findUnique({ where: { id: deletion.expenseId }, select: DELETABLE_SELECT });
+  if (!row || row.source !== "TELEGRAM") {
+    await answerCallbackQuery(callback.id, "รายการนี้ถูกลบไปแล้ว");
+    return edit("รายการนี้ถูกลบไปแล้ว");
+  }
+  const summary = describeExpense(toDeletable(row), appDateString(), 60);
+
+  if (deletion.action === "pick") {
+    await answerCallbackQuery(callback.id);
+    return edit(`ลบรายการนี้?\n${summary}`, buildDeleteConfirm(row.id));
+  }
+
+  await db.expenseSlip.delete({ where: { id: row.id } });
   refreshPages();
-  if (latest.driveFileId) await trashSlip(latest.driveFileId).catch(() => undefined);
-  const label = [`ยกเลิกแล้ว: ${formatBaht(Number(latest.amount))} บาท`];
-  if (latest.note) label.push(latest.note);
-  await sendMessage(chatId, label.join(" · "));
+  if (row.driveFileId) await trashSlip(row.driveFileId).catch(() => undefined);
+  await answerCallbackQuery(callback.id, "ลบแล้ว");
+  await edit(`ลบแล้ว: ${summary}${row.driveFileId ? "\nรูปย้ายไปถังขยะใน Drive แล้ว" : ""}`);
 }
