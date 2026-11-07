@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRightIcon, CaretLeftIcon, CaretRightIcon, FolderIcon, PlusIcon } from "@/components/icons";
+import { ArrowRightIcon, CaretLeftIcon, CaretRightIcon, FolderIcon, PlusIcon, ReceiptIcon } from "@/components/icons";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
@@ -155,13 +155,17 @@ export default async function SlipsPage({
             {slips.map((slip) => (
               <div className="slip-row" key={slip.id}>
                 <div className="slip-thumb">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/slips/${slip.id}/image`}
-                    alt={slip.fileName}
-                    loading="lazy"
-                    className="slip-thumb-img"
-                  />
+                  {slip.driveFileId ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={`/api/slips/${slip.id}/image`}
+                      alt={slip.fileName ?? "สลิป"}
+                      loading="lazy"
+                      className="slip-thumb-img"
+                    />
+                  ) : (
+                    <ReceiptIcon aria-hidden size={24} />
+                  )}
                 </div>
                 <div className="slip-info">
                   <strong>
@@ -172,6 +176,7 @@ export default async function SlipsPage({
                     {slip.paidTime ? ` ${slip.paidTime} น.` : ""}
                     {" · "}
                     {slip.category}
+                    {slip.source === "TELEGRAM" ? " · Telegram" : ""}
                     {slip.subscription ? ` · ${slip.subscription.name}` : ""}
                   </small>
                 </div>

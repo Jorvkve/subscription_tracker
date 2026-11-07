@@ -66,7 +66,10 @@ export default async function SlipDetailPage({
           </div>
         </div>
         <div className="header-actions">
-          <DeleteSlipButton action={deleteAction} />
+          <DeleteSlipButton
+            action={deleteAction}
+            hasImage={Boolean(slip.driveFileId)}
+          />
         </div>
       </header>
 
@@ -78,21 +81,34 @@ export default async function SlipDetailPage({
               <h2>รูปสลิป</h2>
             </div>
           </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`/api/slips/${id}/image`}
-            alt={slip.fileName}
-            className="slip-full-image"
-          />
+          {slip.driveFileId ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={`/api/slips/${id}/image`}
+              alt={slip.fileName ?? "สลิป"}
+              className="slip-full-image"
+            />
+          ) : (
+            <p className="empty-note">ไม่มีรูปสลิป</p>
+          )}
           <dl className="detail-list slip-detail-list">
-            <div>
-              <dt>ชื่อไฟล์</dt>
-              <dd>{slip.fileName}</dd>
-            </div>
-            <div>
-              <dt>ขนาดไฟล์</dt>
-              <dd>{(slip.sizeBytes / 1024).toFixed(1)} KB</dd>
-            </div>
+            {slip.driveFileId && (
+              <>
+                <div>
+                  <dt>ชื่อไฟล์</dt>
+                  <dd>{slip.fileName}</dd>
+                </div>
+                <div>
+                  <dt>ขนาดไฟล์</dt>
+                  <dd>
+                    {slip.sizeBytes != null
+                      ? (slip.sizeBytes / 1024).toFixed(1)
+                      : "0"}{" "}
+                    KB
+                  </dd>
+                </div>
+              </>
+            )}
             <div>
               <dt>วันที่ชำระ</dt>
               <dd className="highlight-value">

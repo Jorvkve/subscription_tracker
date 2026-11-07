@@ -4,15 +4,21 @@ import { useState } from "react";
 
 export function DeleteSlipButton({
   action,
+  hasImage = true,
 }: {
   action: () => Promise<void>;
+  hasImage?: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
 
   if (confirming) {
     return (
       <div className="confirm-delete">
-        <span>ลบสลิปและย้ายไฟล์ไปยัง Drive Trash?</span>
+        <span>
+          {hasImage
+            ? "ลบสลิปและย้ายไฟล์ไปยัง Drive Trash?"
+            : "ลบสลิปนี้?"}
+        </span>
         <form action={action}>
           <button className="button button-danger" type="submit">
             ยืนยันลบ

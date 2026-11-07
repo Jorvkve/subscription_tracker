@@ -19,7 +19,7 @@ export async function GET(
     select: { driveFileId: true, contentType: true },
   });
 
-  if (!slip) {
+  if (!slip || !slip.driveFileId) {
     return new NextResponse(null, { status: 404 });
   }
 
@@ -33,7 +33,7 @@ export async function GET(
   return new NextResponse(stream, {
     status: 200,
     headers: {
-      "Content-Type": slip.contentType,
+      "Content-Type": slip.contentType ?? "application/octet-stream",
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, no-store",
     },

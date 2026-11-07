@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState, useRef, useState } from "react";
 import type { FormActionState } from "@/app/actions";
+import { EXPENSE_CATEGORIES } from "@/lib/expense-categories";
 import { MAX_SLIP_BYTES } from "@/lib/slip-input";
 
 type SlipFormValues = {
@@ -132,7 +133,13 @@ export function SlipForm({
             maxLength={100}
             defaultValue={values?.category ?? ""}
             placeholder="เช่น Food, Entertainment"
+            list="expense-category-suggestions"
           />
+          <datalist id="expense-category-suggestions">
+            {EXPENSE_CATEGORIES.map((cat) => (
+              <option key={cat.key} value={cat.label} />
+            ))}
+          </datalist>
         </label>
         <label className="field field-wide">
           Subscription ที่เกี่ยวข้อง (ไม่บังคับ)
