@@ -9,6 +9,18 @@ export function appDateString(date = new Date()): string {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+/** Current time of day as HH:mm in the app timezone. */
+export function appTimeString(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: process.env.APP_TIMEZONE ?? "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
+  return `${get("hour")}:${get("minute")}`;
+}
+
 export function addDays(date: string, count: number): string {
   const [year, month, day] = date.split("-").map(Number);
   const value = new Date(Date.UTC(year, month - 1, day + count));

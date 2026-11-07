@@ -61,7 +61,7 @@ export default async function SlipDetailPage({
           <div className="detail-title">
             <div>
               <p className="eyebrow">{slip.category}</p>
-              <h1>{slip.payee || "สลิปการชำระเงิน"}</h1>
+              <h1>{slip.payee || slip.note || "สลิปการชำระเงิน"}</h1>
             </div>
           </div>
         </div>

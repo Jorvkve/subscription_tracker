@@ -48,6 +48,31 @@ Google login requires a verified email listed in `ALLOWED_GOOGLE_EMAILS` as a co
 
 **Planned**: OCR to pre-fill slip fields automatically (search code for `TODO(slip-ocr)`).
 
+## Telegram bot
+
+Record daily expenses from a private chat with your own bot. Entries land in the same expense list as `/slips`, marked `Telegram`.
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`) and copy its token.
+2. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` (any long random string) in Vercel and `.env`. Leave `TELEGRAM_ALLOWED_CHAT_ID` empty for now, then deploy.
+3. Register the webhook:
+
+   ```bash
+   curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+     -d "url=https://<your-domain>/api/telegram/webhook" \
+     -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" \
+     -d 'allowed_updates=["message","callback_query"]'
+   ```
+
+4. Message the bot. Until an owner is set it only replies with your chat id. Put that id in `TELEGRAM_ALLOWED_CHAT_ID` and redeploy; from then on every other chat is ignored.
+
+Usage:
+
+- `ข้าว 60`, `60 กาแฟ`, `ค่าเช่า 1,200`, `฿45.50`: the amount may come first or last, and Thai digits work. The bot saves it for today and offers category buttons.
+- A slip photo with a caption such as `350 ค่าไฟ`, or a reply to an earlier photo with the amount: the image is stored in Drive like web uploads, so Google Drive must be connected on `/slips`.
+- `/today`, `/month` (expenses by category, plus subscription payments), `/undo` (removes the latest bot entry from the last 24 hours and moves its image to Drive trash), `/help`.
+
+Each update id is recorded in `TelegramUpdate`, so Telegram retries never create duplicates.
+
 ## Deployment
 
 Deploy the repository to Vercel and configure the environment variables above for each environment. For Gmail SMTP, enable 2-Step Verification and create a Google App Password; never use your normal Google password. Configure Google OAuth's production redirect URI as `https://<your-domain>/api/auth/callback/google` and `https://<your-domain>/api/drive/callback`. `vercel.json` runs reminder generation daily at 01:00 Asia/Bangkok (18:00 UTC). The cron route requires `Authorization: Bearer <CRON_SECRET>`; Vercel Cron supplies this header when the same `CRON_SECRET` project variable is configured.

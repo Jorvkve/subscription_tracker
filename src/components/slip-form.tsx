@@ -132,7 +132,7 @@ export function SlipForm({
             name="category"
             maxLength={100}
             defaultValue={values?.category ?? ""}
-            placeholder="เช่น Food, Entertainment"
+            placeholder="เช่น อาหาร, เดินทาง"
             list="expense-category-suggestions"
           />
           <datalist id="expense-category-suggestions">

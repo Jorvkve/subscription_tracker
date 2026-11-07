@@ -169,7 +169,7 @@ export default async function SlipsPage({
                 </div>
                 <div className="slip-info">
                   <strong>
-                    {slip.payee || "ไม่ระบุผู้รับเงิน"}
+                    {slip.payee || slip.note || "ไม่ระบุผู้รับเงิน"}
                   </strong>
                   <small>
                     {formatDate(dateOnly(slip.paidDate))}
