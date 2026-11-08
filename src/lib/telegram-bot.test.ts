@@ -11,6 +11,7 @@ vi.mock("@/lib/telegram", () => ({
   getFilePath: vi.fn(),
   sendMessage: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("@/lib/subscription-payment", () => ({ recordSubscriptionPayment: vi.fn() }));
 vi.mock("@/lib/google-drive", () => ({
   DriveAuthError: class DriveAuthError extends Error {},
   DriveNotConnectedError: class DriveNotConnectedError extends Error {},
@@ -20,6 +21,7 @@ vi.mock("@/lib/google-drive", () => ({
 
 import { trashSlip, uploadSlip } from "@/lib/google-drive";
 import { getPrisma } from "@/lib/prisma";
+import { recordSubscriptionPayment } from "@/lib/subscription-payment";
 import { answerCallbackQuery, downloadFile, editMessageText, getFilePath, sendMessage } from "@/lib/telegram";
 import { handleTelegramUpdate } from "@/lib/telegram-bot";
 
@@ -236,5 +238,55 @@ describe("handleTelegramUpdate", () => {
     );
     expect(trashSlip).toHaveBeenCalledWith("drive-3");
     expect(sendMessage).toHaveBeenCalledWith(OWNER, "บันทึกไม่สำเร็จ กรุณาลองใหม่");
+  });
+});
+
+describe("subscription reminder paid button", () => {
+  const SUB_ID = "cmh7k2x9b0000abcd1234efgh";
+  function paidTap(updateId = 50) {
+    return {
+      update_id: updateId,
+      callback_query: {
+        id: "cb",
+        data: `paid:${SUB_ID}:20261115`,
+        message: { message_id: 30, chat: { id: OWNER, type: "private" }, text: "เตือนชำระ Netflix อีก 3 วัน" },
+      },
+    };
+  }
+
+  it("records the payment for the reminder's cycle and removes the button", async () => {
+    vi.mocked(recordSubscriptionPayment).mockResolvedValue({
+      ok: true,
+      name: "Netflix",
+      amount: 419,
+      currency: "THB",
+      coveredDueDate: "2026-11-15",
+      nextDueDate: "2026-12-15",
+    });
+    await handleTelegramUpdate(paidTap(), config);
+    expect(recordSubscriptionPayment).toHaveBeenCalledWith(SUB_ID, "2026-11-15");
+    expect(answerCallbackQuery).toHaveBeenCalledWith("cb", "บันทึกแล้ว");
+    expect(editMessageText).toHaveBeenCalledWith(
+      OWNER,
+      30,
+      expect.stringMatching(/^เตือนชำระ Netflix อีก 3 วัน\n\nบันทึกการจ่าย Netflix 419.00 บาท แล้ว/),
+      { inline_keyboard: [] },
+    );
+  });
+
+  it("tells the owner when the cycle was already paid", async () => {
+    vi.mocked(recordSubscriptionPayment).mockResolvedValue({ ok: false, reason: "already_paid" });
+    await handleTelegramUpdate(paidTap(51), config);
+    expect(answerCallbackQuery).toHaveBeenCalledWith("cb", "รอบนี้บันทึกการจ่ายไปแล้ว");
+    expect(editMessageText).toHaveBeenCalledWith(OWNER, 30, expect.stringContaining("รอบนี้บันทึกการจ่ายไปแล้ว"), {
+      inline_keyboard: [],
+    });
+  });
+
+  it("ignores taps from other chats", async () => {
+    const tap = paidTap(52);
+    tap.callback_query.message.chat.id = 7;
+    await handleTelegramUpdate(tap, config);
+    expect(recordSubscriptionPayment).not.toHaveBeenCalled();
   });
 });

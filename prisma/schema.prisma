@@ -106,6 +106,9 @@ model Reminder {
   emailSentAt    DateTime?
   emailErrorCode String?             @db.VarChar(100)
   emailMessageId String?
+  telegramAttemptedAt DateTime?
+  telegramSentAt      DateTime?
+  telegramErrorCode   String?        @db.VarChar(100)
   createdAt      DateTime            @default(now())
   readAt         DateTime?
 

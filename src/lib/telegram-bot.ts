@@ -5,6 +5,7 @@ import { categoryLabel } from "@/lib/expense-categories";
 import { DriveAuthError, DriveNotConnectedError, trashSlip, uploadSlip } from "@/lib/google-drive";
 import { getPrisma } from "@/lib/prisma";
 import { detectImageType, slipDriveFileName } from "@/lib/slip-input";
+import { recordSubscriptionPayment } from "@/lib/subscription-payment";
 import {
   FileTooLargeError,
   answerCallbackQuery,
@@ -37,6 +38,7 @@ import {
   type TgMessage,
   type TgUpdate,
 } from "@/lib/telegram-parse";
+import { decodePaidCallback, paidConfirmation } from "@/lib/telegram-reminder";
 
 const MAX_TELEGRAM_IMAGE_BYTES = 10 * 1024 * 1024;
 const UNDO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -194,6 +196,9 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
 }
 
 async function handleCallback(callback: TgCallbackQuery, chatId: number) {
+  const paid = decodePaidCallback(callback.data ?? "");
+  if (paid) return handlePaidCallback(callback, chatId, paid);
+
   const deletion = decodeDeleteCallback(callback.data ?? "");
   if (deletion) return handleDeleteCallback(callback, chatId, deletion);
 
@@ -214,6 +219,33 @@ async function handleCallback(callback: TgCallbackQuery, chatId: number) {
     await editMessageText(chatId, callback.message.message_id, `${callback.message.text} · ${label}`, {
       inline_keyboard: [],
     }).catch(() => undefined);
+  }
+}
+
+const PAID_NOTES = {
+  already_paid: "รอบนี้บันทึกการจ่ายไปแล้ว",
+  inactive: "รายการนี้ไม่ได้ใช้งานอยู่ จึงไม่ได้บันทึก",
+  not_found: "ไม่พบรายการ Subscription นี้",
+} as const;
+
+/** The reminder's "จ่ายแล้ว" button pays only the cycle the reminder was sent for. */
+async function handlePaidCallback(
+  callback: TgCallbackQuery,
+  chatId: number,
+  paid: NonNullable<ReturnType<typeof decodePaidCallback>>,
+) {
+  const result = await recordSubscriptionPayment(paid.subscriptionId, paid.dueDate);
+  const note = result.ok ? paidConfirmation(result) : PAID_NOTES[result.reason];
+  if (result.ok) {
+    revalidatePath("/");
+    revalidatePath("/subscriptions");
+    revalidatePath(`/subscriptions/${paid.subscriptionId}`);
+  }
+  await answerCallbackQuery(callback.id, result.ok ? "บันทึกแล้ว" : note);
+  const message = callback.message;
+  if (message) {
+    const text = message.text ? `${message.text}\n\n${note}` : note;
+    await editMessageText(chatId, message.message_id, text, { inline_keyboard: [] }).catch(() => undefined);
   }
 }
 

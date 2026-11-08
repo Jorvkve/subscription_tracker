@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BillingUnit, ReminderEmailStatus, SubscriptionStatus } from "@/generated/prisma/client";
-import { advanceDueDate } from "@/lib/billing";
-import { dateOnly, utcDate } from "@/lib/dates";
+import { dateOnly } from "@/lib/dates";
 import { getPrisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
+import { recordSubscriptionPayment } from "@/lib/subscription-payment";
 import { parseTimeOfDay } from "@/lib/time-of-day";
 
 type SubscriptionInput = {
@@ -154,55 +154,13 @@ export async function deleteSubscription(id: string) {
 
 export async function markPaid(id: string) {
   await requireSession();
-  const prisma = getPrisma();
+  let paid = false;
   try {
-    await prisma.$transaction(async (tx) => {
-    const subscription = await tx.subscription.findUnique({ where: { id } });
-    if (!subscription) throw new Error("ไม่พบรายการ Subscription นี้");
-    if (subscription.status !== SubscriptionStatus.ACTIVE) {
-      throw new Error("บันทึกการชำระได้เฉพาะรายการที่กำลังใช้งาน");
-    }
-
-    const coveredDueDate = dateOnly(subscription.nextDueDate);
-    const nextDueDate = advanceDueDate(
-      coveredDueDate,
-      subscription.intervalCount,
-      subscription.intervalUnit,
-      subscription.billingDay,
-    );
-
-    await tx.payment.create({
-      data: {
-        subscriptionId: subscription.id,
-        amount: subscription.price,
-        currency: subscription.currency,
-        coveredDueDate: utcDate(coveredDueDate),
-      },
-    });
-    await tx.subscription.update({
-      where: { id: subscription.id },
-      data: { nextDueDate: utcDate(nextDueDate) },
-    });
-    await tx.reminder.updateMany({
-      where: {
-        subscriptionId: subscription.id,
-        dueDate: utcDate(coveredDueDate),
-        emailStatus: { in: [ReminderEmailStatus.NOT_QUEUED, ReminderEmailStatus.PENDING] },
-      },
-      data: { emailStatus: ReminderEmailStatus.SKIPPED },
-    });
-    await tx.reminder.updateMany({
-      where: {
-        subscriptionId: subscription.id,
-        dueDate: utcDate(coveredDueDate),
-        status: "UNREAD",
-      },
-      data: { status: "READ", readAt: new Date() },
-    });
-    });
+    paid = (await recordSubscriptionPayment(id)).ok;
   } catch {
-    redirect(`/subscriptions/${id}?error=payment`);
+    paid = false;
   }
+  if (!paid) redirect(`/subscriptions/${id}?error=payment`);
 
   revalidatePath("/");
   revalidatePath("/subscriptions");

@@ -57,3 +57,14 @@ describe("email reminder eligibility", () => {
     expect(reminderEmailEligible({ ...base, daysBefore: 6 })).toBe(false);
   });
 });
+
+describe("reminder send day", () => {
+  it("requires an active subscription, the current cycle, and today's offset", async () => {
+    const { reminderSendable } = await import("@/lib/reminders");
+    const base = { subscriptionStatus: "ACTIVE" as const, dueDate: "2026-11-04", currentDueDate: "2026-11-04", today: "2026-11-01", daysBefore: 3 };
+    expect(reminderSendable(base)).toBe(true);
+    expect(reminderSendable({ ...base, subscriptionStatus: "PAUSED" })).toBe(false);
+    expect(reminderSendable({ ...base, currentDueDate: "2026-12-04" })).toBe(false);
+    expect(reminderSendable({ ...base, today: "2026-11-02" })).toBe(false);
+  });
+});
