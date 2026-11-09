@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarBlankIcon, CaretLeftIcon, CaretRightIcon, ClockIcon, MapPinIcon, PlusIcon } from "@/components/icons";
+import { CalendarBlankIcon, CaretLeftIcon, CaretRightIcon, PlusIcon } from "@/components/icons";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
@@ -128,16 +128,9 @@ export default async function SchedulePage({
     return a.title.localeCompare(b.title);
   });
 
-  // Group shifts by date
-  const shiftsByDate = new Map<string, typeof monthShifts>();
-  for (const shift of monthShifts) {
-    const d = dateOnly(shift.date);
-    const list = shiftsByDate.get(d) ?? [];
-    list.push(shift);
-    shiftsByDate.set(d, list);
-  }
-
-  const sortedShiftDates = Array.from(shiftsByDate.keys()).sort();
+  // In the current month, upcoming shifts come first and past ones fold away.
+  const upcomingShifts = monthShifts.filter((shift) => dateOnly(shift.date) >= today);
+  const pastShifts = monthShifts.filter((shift) => dateOnly(shift.date) < today);
 
   return (
     <AppShell email={session.user.email} active="schedule">
@@ -347,7 +340,7 @@ export default async function SchedulePage({
             </nav>
           </div>
 
-          {sortedShiftDates.length === 0 ? (
+          {monthShifts.length === 0 ? (
             <div className="empty-callout">
               <div className="empty-icon"><CalendarBlankIcon aria-hidden /></div>
               <div>
@@ -359,66 +352,68 @@ export default async function SchedulePage({
               </Link>
             </div>
           ) : (
-            <div className="shift-grouped-list">
-              {sortedShiftDates.map((dateStr) => {
-                const dateShifts = shiftsByDate.get(dateStr) ?? [];
-                const isToday = dateStr === today;
-                return (
-                  <div className="shift-date-group" key={dateStr}>
-                    <div className="shift-date-header">
-                      <strong>{formatDate(dateStr)}</strong>
-                      {isToday && <span className="today-badge">วันนี้</span>}
-                      <small className="muted">({dateShifts.length} กะ)</small>
-                    </div>
-                    <div className="shift-items">
-                      {dateShifts.map((shift) => {
-                        const duration = shiftDurationMinutes(
-                          shift.startTime,
-                          shift.endTime,
-                        );
-                        return (
-                          <div className="shift-row" key={shift.id}>
-                            <div className="shift-main">
-                              <Link
-                                className="shift-title-link"
-                                href={`/schedule/shifts/${shift.id}/edit`}
-                              >
-                                <strong>{shift.title}</strong>
-                              </Link>
-                              <div className="shift-meta">
-                                <span className="shift-time">
-                                  <ClockIcon aria-hidden /> {shift.startTime} - {shift.endTime} (
-                                  {formatDuration(duration)})
-                                </span>
-                                {shift.location && (
-                                  <span className="shift-location">
-                                    <MapPinIcon aria-hidden /> {shift.location}
-                                  </span>
-                                )}
-                              </div>
-                              {shift.notes && (
-                                <p className="shift-notes">{shift.notes}</p>
-                              )}
-                            </div>
-                            <div className="shift-actions">
-                              <Link
-                                className="button button-quiet button-sm"
-                                href={`/schedule/shifts/${shift.id}/edit`}
-                              >
-                                แก้ไข
-                              </Link>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              {upcomingShifts.length > 0 && <div className="shift-panel-lines"><ShiftLines shifts={upcomingShifts} today={today} /></div>}
+              {upcomingShifts.length === 0 && <p className="empty-note">ไม่มีกะที่จะถึงในเดือนนี้</p>}
+              {pastShifts.length > 0 && (
+                <details className="shift-past" open={upcomingShifts.length === 0}>
+                  <summary>กะที่ผ่านมาแล้ว ({pastShifts.length})</summary>
+                  <div className="shift-panel-lines"><ShiftLines shifts={pastShifts} today={today} /></div>
+                </details>
+              )}
+            </>
           )}
         </section>
       </div>
     </AppShell>
+  );
+}
+
+const weekdayFormat = new Intl.DateTimeFormat("th-TH", { weekday: "short", timeZone: "UTC" });
+
+type ShiftLine = {
+  id: string;
+  title: string;
+  date: Date;
+  startTime: string;
+  endTime: string;
+  location: string | null;
+  notes: string | null;
+};
+
+/** One compact, fully clickable row per shift, so a month of shifts stays short. */
+function ShiftLines({ shifts, today }: { shifts: readonly ShiftLine[]; today: string }) {
+  return (
+    <ul className="shift-lines">
+      {shifts.map((shift) => {
+        const date = dateOnly(shift.date);
+        const details = [
+          `${shift.startTime}–${shift.endTime}`,
+          formatDuration(shiftDurationMinutes(shift.startTime, shift.endTime)),
+          shift.location,
+          shift.notes,
+        ].filter(Boolean).join(" · ");
+        return (
+          <li key={shift.id}>
+            <Link
+              className={`shift-line${date === today ? " shift-line-today" : ""}`}
+              href={`/schedule/shifts/${shift.id}/edit`}
+              aria-label={`แก้ไขกะ ${shift.title} วันที่ ${formatDate(date)}`}
+            >
+              <span className="shift-line-date">
+                <b>{Number(date.slice(8, 10))}</b>
+                <small>{date === today ? "วันนี้" : weekdayFormat.format(utcDate(date))}</small>
+              </span>
+              <span className={`shift-line-bar tone-${shiftTone(shift.startTime)}`} aria-hidden />
+              <span className="shift-line-main">
+                <strong>{shift.title}</strong>
+                <small>{details}</small>
+              </span>
+              <CaretRightIcon className="shift-line-caret" aria-hidden />
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

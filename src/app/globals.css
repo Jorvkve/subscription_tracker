@@ -290,3 +290,25 @@ a.shift-pill:hover{filter:brightness(1.1)}
 input[type="file"]{color:var(--muted);font:inherit;font-size:13px}
 input[type="file"]::file-selector-button{margin-right:12px;padding:8px 16px;border:1px solid var(--line);border-radius:999px;background:#242428;color:var(--text);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
 input[type="file"]::file-selector-button:hover{border-color:var(--lime);background:#2b2b30}
+
+/* Work shifts list: one compact row per shift. */
+.shift-lines{display:grid;gap:6px;margin:10px 0 0;padding:0;list-style:none}
+.shift-line{display:flex;align-items:center;gap:12px;padding:8px 12px;border:1px solid var(--line);border-radius:14px;background:#141416;color:inherit;text-decoration:none;transition:border-color .15s,background .15s}
+.shift-line:hover{border-color:#3d3d44;background:#18181b}
+.shift-line:focus-visible{outline:2px solid var(--lime);outline-offset:2px}
+.shift-line-today{border-color:var(--lime)}
+.shift-line-date{flex:0 0 40px;display:grid;justify-items:center;line-height:1.1}
+.shift-line-date b{font-size:18px;font-weight:700;color:var(--text)}
+.shift-line-date small{font-size:11px;color:var(--muted)}
+.shift-line-today .shift-line-date small{color:var(--lime);font-weight:600}
+.shift-line-bar{flex:0 0 4px;align-self:stretch;border-radius:4px}
+.shift-line-main{min-width:0;flex:1;display:grid;gap:2px}
+.shift-line-main strong{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shift-line-main small{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shift-line-caret{flex:0 0 auto;color:#5d5d65}
+.shift-past{margin-top:12px}
+.shift-past summary{cursor:pointer;padding:8px 2px;color:var(--muted);font-size:13px;font-weight:600}
+.shift-past summary:hover{color:var(--text)}
+.shift-past .shift-lines{margin-top:4px;opacity:.75}
+.shift-panel-lines{max-height:min(560px,65vh);overflow-y:auto;padding-right:4px;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3a3a40 transparent}
+.shift-line-bar.tone-day{background:var(--lime)}.shift-line-bar.tone-afternoon{background:var(--yellow)}.shift-line-bar.tone-night{background:var(--purple)}

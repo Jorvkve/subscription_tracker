@@ -67,7 +67,25 @@ export type EntryResult = { ok: true; expense: DatedExpense } | { ok: false; err
 
 // A leading date: 8/11, 8/11/69, 8/11/2569 or 8-11-2026. Dots are left out so 12.5 stays an amount.
 const LEADING_DATE = /^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}|\d{2}))?(?=\s|$)\s*([\s\S]*)$/;
-const YESTERDAY = /^เมื่อวาน(?:นี้)?(?=\s|$|\d)\s*([\s\S]*)$/;
+// Relative days, found anywhere in the text since Thai is written without spaces.
+// วานซืน is checked before เมื่อวาน, which it contains.
+const RELATIVE_DAYS: readonly { pattern: RegExp; offset: number }[] = [
+  { pattern: /(?:เมื่อ)?วานซืน/, offset: -2 },
+  { pattern: /เมื่อวาน(?:นี้)?|วานนี้/, offset: -1 },
+];
+
+function findRelativeDay(text: string): { offset: number; rest: string } | null {
+  for (const { pattern, offset } of RELATIVE_DAYS) {
+    const match = pattern.exec(text);
+    if (!match) continue;
+    const before = text.slice(0, match.index);
+    const after = text.slice(match.index + match[0].length);
+    // Keep a space where the word sat between two parts, so ข้าว เมื่อวาน 60 becomes ข้าว 60.
+    const rest = `${before.trimEnd()} ${after.trimStart()}`.trim();
+    return { offset, rest };
+  }
+  return null;
+}
 
 function isoDate(year: number, month: number, day: number): string | null {
   const value = new Date(Date.UTC(year, month - 1, day));
@@ -90,21 +108,23 @@ function shiftYear(date: string, years: number): string | null {
 }
 
 /**
- * Reads an entry with an optional date in front: `8/11/2569 อาหาร 50`, `8/11 ข้าว 60`,
- * `เมื่อวาน ข้าว 60`. Without a date the entry is for `today`. Returns null when the text
- * is not an entry at all, and an error when the date cannot be used.
+ * Reads an entry with an optional date in front (`8/11/2569 อาหาร 50`, `8/11 ข้าว 60`) or a
+ * relative day anywhere (`เมื่อวาน ข้าว 60`, `ข้าว 60 เมื่อวาน`, `กาแฟ วานซืน 45`). The relative
+ * word sets the date to today minus one or two days and is left out of the note. Without a
+ * date the entry is for `today`. Returns null when the text is not an entry at all, and an
+ * error when the date cannot be used.
  */
 export function parseEntry(input: string, today: string): EntryResult | null {
   const text = normalizeThaiDigits(input).trim();
   let date = today;
   let rest = text;
 
-  const yesterday = YESTERDAY.exec(text);
-  const dated = yesterday ? null : LEADING_DATE.exec(text);
-  if (yesterday) {
+  const dated = LEADING_DATE.exec(text);
+  const relative = dated ? null : findRelativeDay(text);
+  if (relative) {
     const [year, month, day] = today.split("-").map(Number);
-    date = new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
-    rest = yesterday[1];
+    date = new Date(Date.UTC(year, month - 1, day + relative.offset)).toISOString().slice(0, 10);
+    rest = relative.rest;
   } else if (dated) {
     const currentYear = Number(today.slice(0, 4));
     const day = Number(dated[1]);
@@ -306,7 +326,7 @@ export const HELP_TEXT = [
   "บันทึกย้อนหลัง ใส่วันที่ไว้ข้างหน้า เช่น",
   "• 8/11/2569 อาหาร 50",
   "• 8/11 ข้าว 60 (ปีนี้)",
-  "• เมื่อวาน กาแฟ 45",
+  "• เมื่อวาน กาแฟ 45 หรือ กาแฟ 45 เมื่อวาน (วานซืน = 2 วันก่อน)",
   "",
   "คำสั่ง",
   "/today ดูรายการวันนี้",

@@ -230,6 +230,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Webhook dedupe rows only matter while Telegram might retry an update, which is hours, not weeks.
+    await db.telegramUpdate.deleteMany({
+      where: { receivedAt: { lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+    });
+
     const staleSending = await db.reminder.updateMany({
       where: {
         emailStatus: ReminderEmailStatus.SENDING,
