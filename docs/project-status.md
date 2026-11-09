@@ -25,11 +25,8 @@ Handoff for any agent or person picking this up. Last updated 2026-11-09.
 
 ## Not yet confirmed
 
-- Gemini slip reading on the web form: not yet tried with a real slip. The owner confirmed it reads real slips in Telegram (2026-11-09).
-- Backdated bot entries: `กาแฟทดสอบ 45 เมื่อวาน`, sent through the live webhook on 2026-11-09, was saved for 8 Nov with the note `กาแฟทดสอบ`. The test entry was then deleted on the web. To post a test update from Git Bash, write the JSON to a UTF-8 file and send it with `--data-binary @file`, because Thai text in a command-line argument arrives garbled.
-- Telegram reminders: confirmed 2026-11-09. A manual production cron run for the test subscription "ทดสอบ Telegram (ลบได้)", due 2026-11-10, sent both the email and the Telegram reminder. The "จ่ายแล้ว" tap is still untried; tap it, then delete that test subscription.
-- Reminder email: confirmed 2026-11-09 by the same run. The scheduled cron has run nightly since 2026-11-07 with no errors.
-- `/undo` and `/edit` passed tests but have not been tried in the live bot.
+- Nothing open. On 2026-11-09 the owner confirmed in the live bot and on the web: the "จ่ายแล้ว" button, `/edit`, `/undo`, backdated entries, and Gemini slip reading in Telegram and on the web form. The reminder email and the Telegram reminder were confirmed by a manual production cron run. The test subscription "ทดสอบ Telegram (ลบได้)" and the test expense were deleted afterwards.
+- Tip: to post a test update to the webhook from Git Bash, write the JSON to a UTF-8 file and send it with `--data-binary @file`. Thai text in a command-line argument arrives garbled.
 
 ## Proposed next, owner to choose
 
