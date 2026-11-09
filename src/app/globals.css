@@ -345,3 +345,32 @@ input[type="file"]::file-selector-button:hover{border-color:var(--lime);backgrou
 .page-header .header-actions:has(.confirm-delete-scopes){flex-basis:100%;max-width:100%}
 .page-header:has(.confirm-delete-scopes){flex-wrap:wrap}
 .budget-exact .budget-figures b{color:var(--lime)}
+
+/* Money Tracker review fixes (2026-11-10). */
+.card-heading-stack{flex-direction:column;align-items:flex-start;gap:2px}
+.card-heading-stack .card-note{margin:0}
+.budget-total{display:grid;gap:8px;margin-bottom:16px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:#141416}
+.budget-total-figures{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;font-size:13px}
+.budget-total-figures strong{font-size:20px;font-weight:700}
+.budget-total .budget-bar{height:12px}
+.budget-total.budget-warn strong{color:var(--amber)}
+.budget-total.budget-over strong{color:var(--red)}
+.budget-list{gap:12px}
+.budget-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.budget-unused{margin-top:12px}
+.budget-unused .budget-list{margin-top:12px}
+.budget-unused summary,.budget-edit summary{display:flex;align-items:center;min-height:44px;cursor:pointer;font-size:13px;font-weight:600;list-style-position:inside}
+.budget-unused summary{color:var(--muted)}
+.budget-unused summary:hover{color:var(--text)}
+.budget-edit{padding-top:4px}
+.bar-value{font-size:12px}
+@media(max-width:760px){.chip-option span{min-height:44px;padding:0 16px;font-size:14px}}
+.tx-more summary{display:flex;align-items:center;justify-content:center;min-height:44px;margin-top:8px;border:1px solid var(--line);border-radius:999px;color:var(--lime);font-size:13px;font-weight:600;cursor:pointer;list-style:none}
+.tx-more summary::-webkit-details-marker{display:none}
+.tx-more[open] summary{display:none}
+
+/* Money Tracker on one column: quick add near the top, the 6-month chart last. */
+@media(max-width:1180px){
+.money-grid>.money-col{display:contents}
+.m-total{order:1}.m-quick{order:2}.m-budget{order:3}.m-tx{order:4}.m-donut{order:5}.m-trend{order:6}
+}

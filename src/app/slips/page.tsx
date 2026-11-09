@@ -15,6 +15,9 @@ import { money } from "@/lib/display";
 import { EXPENSE_CATEGORIES, categoryLabel } from "@/lib/expense-categories";
 import { getPrisma } from "@/lib/prisma";
 
+/** Rows shown before "ดูอีก" on the month's list; the rest fold away to keep the page short. */
+const RECENT_VISIBLE = 8;
+
 function selectedMonth(value: string | string[] | undefined, today: string): string {
   if (typeof value !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return today.slice(0, 7);
   return value;
@@ -89,6 +92,33 @@ export default async function SlipsPage({
   const prevMonth = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, "0")}`;
   const nextMonth = `${nextDate.getUTCFullYear()}-${String(nextDate.getUTCMonth() + 1).padStart(2, "0")}`;
 
+  const renderSlip = (slip: (typeof slips)[number]) => {
+    const paid = dateOnly(slip.paidDate);
+    return (
+      <li key={slip.id}>
+        <Link className="tx-row" href={`/slips/${slip.id}`}>
+          <span className="tx-date">{relativeDayLabel(paid, today) ?? formatDate(paid)}</span>
+          <span className="tx-thumb" aria-hidden>
+            {slip.driveFileId
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={`/api/slips/${slip.id}/image`} alt="" loading="lazy" />
+              : <span>{categoryEmoji(slip.category)}</span>}
+          </span>
+          <span className="tx-main">
+            <strong>{slip.payee || slip.note || "ไม่ระบุผู้รับเงิน"}</strong>
+            <small>
+              {categoryLabel(slip.category) ?? slip.category}
+              {slip.paidTime ? ` · ${slip.paidTime} น.` : ""}
+              {slip.source === "TELEGRAM" ? " · Telegram" : ""}
+              {slip.subscription ? ` · ${slip.subscription.name}` : ""}
+            </small>
+          </span>
+          <span className="tx-amount">- {money(Number(slip.amount), slip.currency)}</span>
+        </Link>
+      </li>
+    );
+  };
+
   return (
     <AppShell email={session.user.email} active="slips">
       <HeroHeader title="Money" accent="Tracker" name={firstName(session.user)} tagline="มาเช็กกระแสเงินกันหน่อย 💸">
@@ -117,8 +147,9 @@ export default async function SlipsPage({
       )}
 
       <div className="money-grid">
+        {/* Desktop: overview on the left, actions on the right. Phones reorder these with CSS. */}
         <div className="money-col">
-          <section className="panel money-total" aria-labelledby="money-total-title">
+          <section className="panel money-total m-total" aria-labelledby="money-total-title">
             <div className="card-heading">
               <h2 id="money-total-title" className="card-title">ใช้ไปเดือนนี้ <span className="card-title-sub">({monthTitle(monthLabel)})</span></h2>
               <nav className="month-switcher" aria-label="เปลี่ยนเดือน">
@@ -138,22 +169,20 @@ export default async function SlipsPage({
             </div>
           </section>
 
-          <section className="panel" aria-labelledby="trend-title">
-            <div className="card-heading">
-              <h2 id="trend-title" className="card-title">รายจ่าย 6 เดือน <span className="card-title-sub">(บาท)</span></h2>
-            </div>
-            <ol className="bar-chart">
-              {trend.map((item) => (
-                <li key={item.month} className={item.month === monthLabel ? "bar-current" : undefined} aria-label={`${monthTitle(item.month)} ${money(item.amount, "THB")}`}>
-                  <span className="bar-value">{item.amount > 0 ? Math.round(item.amount).toLocaleString("th-TH") : "–"}</span>
-                  <span className="bar-track"><span className="bar-fill" style={{ height: `${Math.max((item.amount / trendMax) * 100, item.amount > 0 ? 4 : 0)}%` }} /></span>
-                  <span className="bar-label">{monthTitle(item.month, "short")}</span>
-                </li>
-              ))}
-            </ol>
-          </section>
+          <BudgetPanel className="m-budget" lines={budgetRows} budgets={budgets} month={monthLabel} action={saveBudgets} />
 
-          <section className="panel" aria-labelledby="quick-title">
+          <section className="panel m-donut" aria-labelledby="where-title">
+            <div className="card-heading">
+              <h2 id="where-title" className="card-title">เงินหายไปไหน? <span aria-hidden>🤔</span></h2>
+            </div>
+            {categories.length === 0
+              ? <p className="empty-note">ยังไม่มีรายจ่ายในเดือนนี้ <span aria-hidden>😴</span></p>
+              : <SpendDonut categories={categories} emoji className="donut-side" />}
+          </section>
+        </div>
+
+        <div className="money-col">
+          <section className="panel m-quick" aria-labelledby="quick-title">
             <div className="card-heading">
               <h2 id="quick-title" className="card-title">บันทึกด่วน <span aria-hidden>⚡</span></h2>
               <span className="muted card-note">วันนี้ · ไม่ต้องมีรูปสลิป</span>
@@ -181,21 +210,8 @@ export default async function SlipsPage({
               </div>
             </form>
           </section>
-        </div>
 
-        <div className="money-col">
-          <BudgetPanel lines={budgetRows} budgets={budgets} month={monthLabel} action={saveBudgets} />
-
-          <section className="panel" aria-labelledby="where-title">
-            <div className="card-heading">
-              <h2 id="where-title" className="card-title">เงินหายไปไหน? <span aria-hidden>🤔</span></h2>
-            </div>
-            {categories.length === 0
-              ? <p className="empty-note">ยังไม่มีรายจ่ายในเดือนนี้ <span aria-hidden>😴</span></p>
-              : <SpendDonut categories={categories} emoji className="donut-side" />}
-          </section>
-
-          <section className="panel" aria-labelledby="tx-title">
+          <section className="panel m-tx" aria-labelledby="tx-title">
             <div className="card-heading">
               <h2 id="tx-title" className="card-title">รายการล่าสุด <span className="card-title-sub">({slips.length})</span></h2>
             </div>
@@ -205,35 +221,31 @@ export default async function SlipsPage({
                 <Link className="text-link" href="/slips/new">เพิ่มสลิปแรก <ArrowRightIcon aria-hidden /></Link>
               </div>
             ) : (
-              <ul className="tx-list">
-                {slips.map((slip) => {
-                  const paid = dateOnly(slip.paidDate);
-                  return (
-                    <li key={slip.id}>
-                      <Link className="tx-row" href={`/slips/${slip.id}`}>
-                        <span className="tx-date">{relativeDayLabel(paid, today) ?? formatDate(paid)}</span>
-                        <span className="tx-thumb" aria-hidden>
-                          {slip.driveFileId
-                            // eslint-disable-next-line @next/next/no-img-element
-                            ? <img src={`/api/slips/${slip.id}/image`} alt="" loading="lazy" />
-                            : <span>{categoryEmoji(slip.category)}</span>}
-                        </span>
-                        <span className="tx-main">
-                          <strong>{slip.payee || slip.note || "ไม่ระบุผู้รับเงิน"}</strong>
-                          <small>
-                            {categoryLabel(slip.category) ?? slip.category}
-                            {slip.paidTime ? ` · ${slip.paidTime} น.` : ""}
-                            {slip.source === "TELEGRAM" ? " · Telegram" : ""}
-                            {slip.subscription ? ` · ${slip.subscription.name}` : ""}
-                          </small>
-                        </span>
-                        <span className="tx-amount">- {money(Number(slip.amount), slip.currency)}</span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
+              <>
+                <ul className="tx-list">{slips.slice(0, RECENT_VISIBLE).map(renderSlip)}</ul>
+                {slips.length > RECENT_VISIBLE && (
+                  <details className="tx-more">
+                    <summary>ดูอีก {slips.length - RECENT_VISIBLE} รายการ</summary>
+                    <ul className="tx-list">{slips.slice(RECENT_VISIBLE).map(renderSlip)}</ul>
+                  </details>
+                )}
+              </>
             )}
+          </section>
+
+          <section className="panel m-trend" aria-labelledby="trend-title">
+            <div className="card-heading">
+              <h2 id="trend-title" className="card-title">รายจ่าย 6 เดือน <span className="card-title-sub">(บาท)</span></h2>
+            </div>
+            <ol className="bar-chart">
+              {trend.map((item) => (
+                <li key={item.month} className={item.month === monthLabel ? "bar-current" : undefined} aria-label={`${monthTitle(item.month)} ${money(item.amount, "THB")}`}>
+                  <span className="bar-value">{item.amount > 0 ? Math.round(item.amount).toLocaleString("th-TH") : "–"}</span>
+                  <span className="bar-track"><span className="bar-fill" style={{ height: `${Math.max((item.amount / trendMax) * 100, item.amount > 0 ? 4 : 0)}%` }} /></span>
+                  <span className="bar-label">{monthTitle(item.month, "short")}</span>
+                </li>
+              ))}
+            </ol>
           </section>
         </div>
       </div>
