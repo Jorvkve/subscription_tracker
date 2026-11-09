@@ -121,9 +121,9 @@ describe("category callbacks", () => {
   const id = "cmh7k2x9b0000abcd1234efgh";
 
   it("round-trips and fits Telegram's 64-byte limit", () => {
-    const data = encodeCategoryCallback(id, "transport");
+    const data = encodeCategoryCallback(id, "fuel");
     expect(new TextEncoder().encode(data).length).toBeLessThanOrEqual(64);
-    expect(decodeCategoryCallback(data)).toEqual({ expenseId: id, key: "transport" });
+    expect(decodeCategoryCallback(data)).toEqual({ expenseId: id, key: "fuel" });
   });
 
   it("rejects unknown keys and malformed data", () => {
@@ -134,8 +134,8 @@ describe("category callbacks", () => {
 
   it("lays the categories out four per row", () => {
     const rows = buildCategoryKeyboard(id).inline_keyboard;
-    expect(rows.map((row) => row.length)).toEqual([4, 3]);
-    expect(rows[0][0]).toEqual({ text: "อาหาร", callback_data: `cat:${id}:food` });
+    expect(rows.map((row) => row.length)).toEqual([4, 4, 4]);
+    expect(rows[0][0]).toEqual({ text: "ค่ากิน", callback_data: `cat:${id}:food` });
   });
 });
 

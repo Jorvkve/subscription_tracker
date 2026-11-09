@@ -5,11 +5,11 @@ describe("spendByCategory", () => {
   it("groups, labels and sorts by amount", () => {
     const result = spendByCategory([
       { category: "food", amount: 60 },
-      { category: "transport", amount: 40 },
+      { category: "ค่าน้ำมัน", amount: 40 },
       { category: "food", amount: 100 },
       { category: "Other", amount: 0 },
     ]);
-    expect(result.map((item) => item.label)).toEqual(["อาหาร", "เดินทาง", "อื่นๆ"]);
+    expect(result.map((item) => item.label)).toEqual(["ค่ากิน", "ค่าน้ำมัน", "อื่นๆ"]);
     expect(result[0].amount).toBe(160);
     expect(result[0].share).toBeCloseTo(0.8);
   });

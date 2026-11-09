@@ -1,6 +1,5 @@
-import { categoryKeyOf } from "@/lib/budget";
 import { addDays } from "@/lib/dates";
-import { categoryLabel } from "@/lib/expense-categories";
+import { EXPENSE_CATEGORIES, categoryLabel, matchCategoryKey } from "@/lib/expense-categories";
 
 export type CategorySpend = { key: string; label: string; amount: number; share: number };
 
@@ -8,14 +7,15 @@ export type CategorySpend = { key: string; label: string; amount: number; share:
 export function spendByCategory(expenses: readonly { category: string; amount: number }[]): CategorySpend[] {
   const sums = new Map<string, number>();
   for (const { category, amount } of expenses) {
-    const key = category.trim() || "Other";
+    // Known keys, labels and old names group under one category; free text stays as typed.
+    const key = matchCategoryKey(category) ?? (category.trim() || "other");
     sums.set(key, (sums.get(key) ?? 0) + amount);
   }
   const total = [...sums.values()].reduce((sum, value) => sum + value, 0);
   return [...sums.entries()]
     .map(([key, amount]) => ({
       key,
-      label: categoryLabel(key) ?? (key.toLowerCase() === "other" ? "อื่นๆ" : key),
+      label: categoryLabel(key) ?? key,
       amount,
       share: total > 0 ? amount / total : 0,
     }))
@@ -39,19 +39,10 @@ export function shiftTone(startTime: string): ShiftTone {
   return "night";
 }
 
-const categoryEmojis: Record<string, string> = {
-  food: "🍔",
-  transport: "🚗",
-  shopping: "🛍️",
-  bills: "🧾",
-  fun: "🎬",
-  health: "💊",
-};
-
-/** Emoji for an expense category key; free-text categories get a box. */
+/** Emoji for a category key, label, or old name; free-text categories get a box. */
 export function categoryEmoji(category: string): string {
-  // Rows store a key (food) from the web or a Thai label (อาหาร) from the bot.
-  return categoryEmojis[category] ?? categoryEmojis[categoryKeyOf(category)] ?? "📦";
+  const key = matchCategoryKey(category);
+  return EXPENSE_CATEGORIES.find((item) => item.key === key)?.emoji ?? "📦";
 }
 
 /** The `count` months (YYYY-MM) ending with `lastMonth`, oldest first. */

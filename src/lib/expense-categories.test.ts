@@ -1,36 +1,41 @@
 import { describe, expect, it } from "vitest";
-import {
-  categoryLabel,
-  EXPENSE_CATEGORIES,
-} from "@/lib/expense-categories";
+import { EXPENSE_CATEGORIES, categoryKeyFor, categoryLabel, matchCategoryKey } from "@/lib/expense-categories";
 
 describe("expense-categories", () => {
-  it("contains the expected categories in order", () => {
-    expect(EXPENSE_CATEGORIES).toEqual([
-      { key: "food", label: "อาหาร" },
-      { key: "transport", label: "เดินทาง" },
-      { key: "shopping", label: "ช้อปปิ้ง" },
-      { key: "bills", label: "บิลและค่าบริการ" },
-      { key: "fun", label: "บันเทิง" },
-      { key: "health", label: "สุขภาพ" },
-      { key: "other", label: "อื่นๆ" },
+  it("follows the owner's budget items, with อื่นๆ last", () => {
+    expect(EXPENSE_CATEGORIES.map((item) => item.label)).toEqual([
+      "ค่ากิน",
+      "ค่าห้อง",
+      "ค่าน้ำมัน",
+      "ค่าเน็ต",
+      "ค่าซักผ้า",
+      "เงินเก็บ",
+      "ค่าน้ำค่าไฟ",
+      "หุ้น",
+      "ฉุกเฉิน",
+      "จ่ายบิล",
+      "บิลรายเดือน",
+      "อื่นๆ",
     ]);
+    expect(new Set(EXPENSE_CATEGORIES.map((item) => item.key)).size).toBe(EXPENSE_CATEGORIES.length);
   });
 
-  it("categoryLabel returns the Thai label for valid keys", () => {
-    expect(categoryLabel("food")).toBe("อาหาร");
-    expect(categoryLabel("transport")).toBe("เดินทาง");
-    expect(categoryLabel("shopping")).toBe("ช้อปปิ้ง");
-    expect(categoryLabel("bills")).toBe("บิลและค่าบริการ");
-    expect(categoryLabel("fun")).toBe("บันเทิง");
-    expect(categoryLabel("health")).toBe("สุขภาพ");
+  it("categoryLabel returns the Thai label for keys only", () => {
+    expect(categoryLabel("food")).toBe("ค่ากิน");
+    expect(categoryLabel("subs")).toBe("บิลรายเดือน");
     expect(categoryLabel("other")).toBe("อื่นๆ");
+    expect(categoryLabel("ค่ากิน")).toBeNull();
+    expect(categoryLabel("transport")).toBeNull();
   });
 
-  it("categoryLabel returns null for unknown keys", () => {
-    expect(categoryLabel("")).toBeNull();
-    expect(categoryLabel("unknown")).toBeNull();
-    expect(categoryLabel("FOOD")).toBeNull();
-    expect(categoryLabel("อาหาร")).toBeNull();
+  it("maps keys, labels and old names, and leaves free text unmatched", () => {
+    expect(matchCategoryKey("ค่าห้อง")).toBe("rent");
+    expect(matchCategoryKey("FOOD")).toBe("food");
+    expect(matchCategoryKey("อาหาร")).toBe("food");
+    expect(matchCategoryKey("เดินทาง")).toBe("fuel");
+    expect(matchCategoryKey("บิลและค่าบริการ")).toBe("bills");
+    expect(matchCategoryKey("บันเทิง")).toBe("other");
+    expect(matchCategoryKey("Netflix")).toBeNull();
+    expect(categoryKeyFor("Netflix")).toBe("other");
   });
 });

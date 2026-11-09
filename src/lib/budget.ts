@@ -1,5 +1,5 @@
 // Pure budget helpers: no Prisma, server-only, or network imports.
-import { EXPENSE_CATEGORIES, type ExpenseCategoryKey } from "@/lib/expense-categories";
+import { EXPENSE_CATEGORIES, categoryKeyFor, type ExpenseCategoryKey } from "@/lib/expense-categories";
 
 export type BudgetMap = Partial<Record<ExpenseCategoryKey, number>>;
 export type SpendMap = Partial<Record<ExpenseCategoryKey, number>>;
@@ -9,14 +9,9 @@ export type BudgetLevel = "ok" | "warn" | "over";
 export const BUDGET_WARN_SHARE = 0.8;
 const MAX_BUDGET = 100_000_000;
 
-/**
- * Expense rows store the category as a key from the web (`food`) or a Thai label from the bot
- * (`อาหาร`). Anything else, including the old `Other`, counts as `other`.
- */
+/** The budget category of a stored expense category; see `categoryKeyFor`. */
 export function categoryKeyOf(value: string): ExpenseCategoryKey {
-  const text = value.trim();
-  const match = EXPENSE_CATEGORIES.find((item) => item.key === text.toLowerCase() || item.label === text);
-  return match ? match.key : "other";
+  return categoryKeyFor(value);
 }
 
 export function sumByCategory(rows: readonly { category: string; amount: number }[]): SpendMap {

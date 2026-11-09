@@ -13,8 +13,9 @@ import {
 describe("categoryKeyOf", () => {
   it("reads web keys, bot labels, and anything else as other", () => {
     expect(categoryKeyOf("food")).toBe("food");
+    expect(categoryKeyOf("ค่ากิน")).toBe("food");
     expect(categoryKeyOf("อาหาร")).toBe("food");
-    expect(categoryKeyOf("บิลและค่าบริการ")).toBe("bills");
+    expect(categoryKeyOf("จ่ายบิล")).toBe("bills");
     expect(categoryKeyOf("Other")).toBe("other");
     expect(categoryKeyOf("Cloud")).toBe("other");
   });
@@ -23,8 +24,8 @@ describe("categoryKeyOf", () => {
     expect(sumByCategory([
       { category: "food", amount: 50 },
       { category: "อาหาร", amount: 60 },
-      { category: "เดินทาง", amount: 30 },
-    ])).toEqual({ food: 110, transport: 30 });
+      { category: "ค่าน้ำมัน", amount: 30 },
+    ])).toEqual({ food: 110, fuel: 30 });
   });
 });
 
@@ -46,9 +47,9 @@ describe("budget levels", () => {
   });
 
   it("lists only budgeted categories in app order", () => {
-    const lines = budgetLines({ transport: 1000, food: 3000 }, { food: 2700, transport: 100, fun: 50 });
-    expect(lines.map((line) => [line.key, line.level])).toEqual([["food", "warn"], ["transport", "ok"]]);
-    expect(formatBudgetLines(lines)).toEqual(["งบเดือนนี้", "🟡 อาหาร 2,700 / 3,000 (90%)", "🟢 เดินทาง 100 / 1,000 (10%)"]);
+    const lines = budgetLines({ rent: 1000, food: 3000 }, { food: 2700, rent: 100, laundry: 50 });
+    expect(lines.map((line) => [line.key, line.level])).toEqual([["food", "warn"], ["rent", "ok"]]);
+    expect(formatBudgetLines(lines)).toEqual(["งบเดือนนี้", "🟡 ค่ากิน 2,700 / 3,000 (90%)", "🟢 ค่าห้อง 100 / 1,000 (10%)"]);
     expect(formatBudgetLines([])).toEqual([]);
   });
 
@@ -66,15 +67,15 @@ describe("parseBudgetForm", () => {
   }
 
   it("reads amounts and treats empty or zero as no budget", () => {
-    const parsed = parseBudgetForm(form({ budget_food: "3,000", budget_transport: "", budget_fun: "0" }));
+    const parsed = parseBudgetForm(form({ budget_food: "3,000", budget_rent: "", budget_stocks: "0" }));
     expect(parsed.food).toBe(3000);
-    expect(parsed.transport).toBeNull();
-    expect(parsed.fun).toBeNull();
+    expect(parsed.rent).toBeNull();
+    expect(parsed.stocks).toBeNull();
     expect(parsed.other).toBeNull();
   });
 
   it("rejects text and negative numbers", () => {
-    expect(() => parseBudgetForm(form({ budget_food: "abc" }))).toThrow("งบอาหาร");
+    expect(() => parseBudgetForm(form({ budget_food: "abc" }))).toThrow("งบค่ากิน");
     expect(() => parseBudgetForm(form({ budget_food: "-5" }))).toThrow();
   });
 });

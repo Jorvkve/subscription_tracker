@@ -151,9 +151,9 @@ describe("handleTelegramUpdate", () => {
       },
       config,
     );
-    expect(db.expenseSlip.update).toHaveBeenCalledWith({ where: { id: EXPENSE_ID }, data: { category: "อาหาร" } });
+    expect(db.expenseSlip.update).toHaveBeenCalledWith({ where: { id: EXPENSE_ID }, data: { category: "ค่ากิน" } });
     expect(answerCallbackQuery).toHaveBeenCalledWith("cb", "บันทึกหมวดแล้ว");
-    expect(editMessageText).toHaveBeenCalledWith(OWNER, 11, "บันทึก 60.00 บาท · ข้าว · อาหาร", { inline_keyboard: [] });
+    expect(editMessageText).toHaveBeenCalledWith(OWNER, 11, "บันทึก 60.00 บาท · ข้าว · ค่ากิน", { inline_keyboard: [] });
   });
 
   it("refuses a button for an expense that did not come from Telegram", async () => {
@@ -545,12 +545,12 @@ describe("budget warnings", () => {
     db.expenseSlip.findUnique.mockResolvedValue(stored);
     vi.mocked(budgetAlertAfter).mockResolvedValueOnce("⚠️ เกินงบอาหารแล้ว");
     await handleTelegramUpdate(categoryTap("food", 70), config);
-    expect(budgetAlertAfter).toHaveBeenCalledWith("อาหาร", "2026-11-09", 600, "THB");
+    expect(budgetAlertAfter).toHaveBeenCalledWith("ค่ากิน", "2026-11-09", 600, "THB");
     expect(sendMessage).toHaveBeenCalledWith(OWNER, "⚠️ เกินงบอาหารแล้ว");
   });
 
   it("stays quiet when no threshold was crossed or the category did not change", async () => {
-    db.expenseSlip.findUnique.mockResolvedValue({ ...stored, category: "อาหาร" });
+    db.expenseSlip.findUnique.mockResolvedValue({ ...stored, category: "ค่ากิน" });
     await handleTelegramUpdate(categoryTap("food", 71), config);
     expect(budgetAlertAfter).not.toHaveBeenCalled();
     expect(sendMessage).not.toHaveBeenCalled();
