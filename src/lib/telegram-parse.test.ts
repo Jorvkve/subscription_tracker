@@ -234,3 +234,29 @@ describe("summaries", () => {
     expect(text).toContain("Subscription ที่จ่ายแล้ว 149.00 บาท");
   });
 });
+
+describe("edit helpers", () => {
+  const ID = "cmh7k2x9b0000abcd1234efgh";
+  it("round-trips edit callbacks", async () => {
+    const { decodeEditCallback, encodeEditCallback } = await import("@/lib/telegram-parse");
+    expect(decodeEditCallback(encodeEditCallback({ action: "pick", expenseId: ID }))).toEqual({ action: "pick", expenseId: ID });
+    expect(decodeEditCallback("editno")).toEqual({ action: "cancel" });
+    expect(decodeEditCallback(`del:${ID}`)).toBeNull();
+  });
+
+  it("finds the entry id only in an edit prompt", async () => {
+    const { buildEditPrompt, editPromptExpenseId } = await import("@/lib/telegram-parse");
+    expect(editPromptExpenseId(buildEditPrompt("กาแฟ · 45.00 บาท", ID))).toBe(ID);
+    expect(editPromptExpenseId("บันทึก 45.00 บาท")).toBeNull();
+    expect(editPromptExpenseId(undefined)).toBeNull();
+  });
+
+  it("reads an amount alone", async () => {
+    const { parseEditAmount } = await import("@/lib/telegram-parse");
+    expect(parseEditAmount("55")).toBe(55);
+    expect(parseEditAmount("1,250.50 บาท")).toBe(1250.5);
+    expect(parseEditAmount("๕๕")).toBe(55);
+    expect(parseEditAmount("กาแฟ 55")).toBeNull();
+    expect(parseEditAmount("abc")).toBeNull();
+  });
+});

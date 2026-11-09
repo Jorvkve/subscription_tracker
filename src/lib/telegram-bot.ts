@@ -24,14 +24,19 @@ import {
   buildCategoryKeyboard,
   buildDeleteConfirm,
   buildDeletePicker,
+  buildEditPicker,
+  buildEditPrompt,
   buildRetryImageKeyboard,
   decodeCategoryCallback,
   decodeDeleteCallback,
+  decodeEditCallback,
+  editPromptExpenseId,
   describeExpense,
   formatBaht,
   formatDaySummary,
   formatMonthSummary,
   parseCommand,
+  parseEditAmount,
   parseEntry,
   pickImage,
   type BotCommand,
@@ -135,6 +140,10 @@ async function handleMessage(message: TgMessage) {
   const text = (message.text ?? "").trim();
   const command = parseCommand(text);
   if (command) return handleCommand(command, chatId);
+
+  // A reply to an edit prompt changes that entry's amount.
+  const editId = editPromptExpenseId(message.reply_to_message?.text);
+  if (editId) return handleEditReply(chatId, editId, text);
 
   // Replying to an earlier photo with the amount attaches that photo.
   const repliedImage = message.reply_to_message ? pickImage(message.reply_to_message) : null;
@@ -296,6 +305,9 @@ async function handleCallback(callback: TgCallbackQuery, chatId: number) {
   const deletion = decodeDeleteCallback(callback.data ?? "");
   if (deletion) return handleDeleteCallback(callback, chatId, deletion);
 
+  const editing = decodeEditCallback(callback.data ?? "");
+  if (editing) return handleEditCallback(callback, chatId, editing);
+
   const decoded = decodeCategoryCallback(callback.data ?? "");
   const label = decoded ? categoryLabel(decoded.key) : null;
   const db = getPrisma();
@@ -368,6 +380,7 @@ async function handleCommand(command: BotCommand, chatId: number) {
   if (command === "start" || command === "help") return sendMessage(chatId, HELP_TEXT);
   if (command === "today") return sendToday(chatId);
   if (command === "month") return sendMonth(chatId);
+  if (command === "edit") return sendEditPicker(chatId);
   return sendDeletePicker(chatId);
 }
 
@@ -454,16 +467,73 @@ function toDeletable(row: DeletableRow) {
   };
 }
 
-/** Lists recent bot entries as buttons; deleting takes a second confirming tap. */
-async function sendDeletePicker(chatId: number) {
-  const rows = await getPrisma().expenseSlip.findMany({
+function recentBotEntries() {
+  return getPrisma().expenseSlip.findMany({
     where: { source: "TELEGRAM", createdAt: { gte: new Date(Date.now() - UNDO_WINDOW_MS) } },
     orderBy: { createdAt: "desc" },
     take: UNDO_LIST_SIZE,
     select: DELETABLE_SELECT,
   });
+}
+
+/** Lists recent bot entries as buttons; deleting takes a second confirming tap. */
+async function sendDeletePicker(chatId: number) {
+  const rows = await recentBotEntries();
   if (rows.length === 0) return sendMessage(chatId, "ไม่มีรายการจากบอทใน 7 วันที่ผ่านมา");
   await sendMessage(chatId, "เลือกรายการที่จะลบ", buildDeletePicker(rows.map(toDeletable), appDateString()));
+}
+
+/** Lists recent bot entries; picking one asks for the new amount as a reply. */
+async function sendEditPicker(chatId: number) {
+  const rows = await recentBotEntries();
+  if (rows.length === 0) return sendMessage(chatId, "ไม่มีรายการจากบอทใน 7 วันที่ผ่านมา");
+  await sendMessage(chatId, "เลือกรายการที่จะแก้ยอด", buildEditPicker(rows.map(toDeletable), appDateString()));
+}
+
+async function handleEditCallback(
+  callback: TgCallbackQuery,
+  chatId: number,
+  editing: NonNullable<ReturnType<typeof decodeEditCallback>>,
+) {
+  const messageId = callback.message?.message_id;
+  const edit = (text: string) =>
+    messageId === undefined
+      ? Promise.resolve()
+      : editMessageText(chatId, messageId, text, { inline_keyboard: [] }).catch(() => undefined);
+
+  if (editing.action === "cancel") {
+    await answerCallbackQuery(callback.id);
+    return edit("ไม่ได้แก้รายการใด");
+  }
+
+  const row = await getPrisma().expenseSlip.findUnique({ where: { id: editing.expenseId }, select: DELETABLE_SELECT });
+  if (!row || row.source !== "TELEGRAM") {
+    await answerCallbackQuery(callback.id, "ไม่พบรายการนี้แล้ว");
+    return edit("ไม่พบรายการนี้แล้ว");
+  }
+  const summary = describeExpense(toDeletable(row), appDateString(), 60);
+  await answerCallbackQuery(callback.id);
+  await edit(`เลือกแก้: ${summary}`);
+  await sendMessage(chatId, buildEditPrompt(summary, row.id), {
+    force_reply: true,
+    input_field_placeholder: "ยอดใหม่ เช่น 55",
+  });
+}
+
+async function handleEditReply(chatId: number, expenseId: string, text: string) {
+  const amount = parseEditAmount(text);
+  if (amount === null) {
+    return sendMessage(chatId, "พิมพ์เฉพาะยอดเงิน เช่น 55 แล้วตอบกลับข้อความแก้ยอดอีกครั้ง");
+  }
+  const db = getPrisma();
+  const row = await db.expenseSlip.findUnique({ where: { id: expenseId }, select: DELETABLE_SELECT });
+  if (!row || row.source !== "TELEGRAM") return sendMessage(chatId, "ไม่พบรายการนี้แล้ว อาจถูกลบไปแล้ว");
+
+  const before = Number(row.amount);
+  await db.expenseSlip.update({ where: { id: row.id }, data: { amount } });
+  refreshPages();
+  const summary = describeExpense({ ...toDeletable(row), amount }, appDateString(), 60);
+  await sendMessage(chatId, `แก้ยอดแล้ว ${formatBaht(before)} → ${formatBaht(amount)} บาท\n${summary}`);
 }
 
 async function handleDeleteCallback(

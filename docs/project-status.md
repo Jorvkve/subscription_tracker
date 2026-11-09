@@ -20,15 +20,16 @@ Handoff for any agent or person picking this up. Last updated 2026-11-09.
 - Backdated bot entries (deployed 2026-11-09, commit 3c98dac): a leading date such as `8/11/2569 อาหาร 50`, `8/11 ข้าว 60` (this year, or last year if that date is still ahead), or a relative day anywhere in the text: `เมื่อวาน`/`เมื่อวานนี้`/`วานนี้` is today −1 and `วานซืน` today −2 (`กาแฟ 45 เมื่อวาน`, `ข้าวเมื่อวาน 60`). The relative word is left out of the note. Buddhist and Christian years both work; future and impossible dates are refused. Backdated entries are saved without a time. Photo captions accept the same format. Parsing is `parseEntry` in `src/lib/telegram-parse.ts`.
 - Slip reading with Gemini (deployed 2026-11-09, commit 3c98dac): `src/lib/slip-ocr.ts` calls the Gemini REST API with `GEMINI_API_KEY` and an optional `GEMINI_MODEL` (default `gemini-flash-lite-latest`; full Flash took over 75 s per slip on 2026-11-09). The bot reads a photo only when its caption or reply has no amount, then saves the amount, date, time, and payee and says "อ่านจากสลิป"; a caption amount always wins. On the web, choosing an image fills the form for the owner to check. Without the key both fall back to manual entry. The key is in the local `.env` (2026-11-09) and a generated test slip read correctly through `readSlip`; the owner added it to Vercel and redeployed the same day.
 - Album retries (deployed 2026-11-09): the owner sent several slips at once and some got "บันทึกไม่สำเร็จ", which forced a resend. The cause was not visible because the log held only the error name. Now each photo step (Telegram download, Drive upload, database insert, Gemini on 429/5xx/timeout) is retried twice with jittered waits via `src/lib/retry.ts`, and the log line names the error and its first message line. A photo that still fails gets a reply with a "ลองใหม่" button that runs it again from the replied-to photo, so no resend is needed. Ten parallel Gemini reads of a test slip all succeeded.
+- Editing an amount from the bot (deployed 2026-11-09): `/edit` lists the same recent bot entries as `/undo`; picking one sends a prompt with a forced reply, and replying with an amount alone (`55`, `1,250 บาท`) updates it. The prompt ends with `รหัสรายการ <id>`, which is how the reply finds the entry without stored state. Only `TELEGRAM` entries can be edited.
 - Subscription reminders through Telegram (deployed 2026-11-08): the daily cron sends each 7/3/1-day reminder to the owner's chat with a "จ่ายแล้ว" button. The button pays only the cycle the reminder was for, so a repeat or late tap reports "รอบนี้บันทึกการจ่ายไปแล้ว". The web "mark paid" action and the bot share `src/lib/subscription-payment.ts`. Delivery is tracked in `Reminder.telegramAttemptedAt/SentAt/ErrorCode` and shown on the "ประวัติและระบบ" page.
 
 ## Not yet confirmed
 
 - Gemini slip reading on the web form: not yet tried with a real slip. The owner confirmed it reads real slips in Telegram (2026-11-09).
-- Backdated bot entries: deployed, not yet tried in the live bot.
-- Telegram reminders: deployed, but no reminder has been sent yet. Check the first one and the "จ่ายแล้ว" tap.
-- Reminder email: the cron route has never been seen running in production. Check the "ประวัติและระบบ" page.
-- The `/undo` picker passed tests but was not yet tried in the live bot when this was written.
+- Backdated bot entries: `กาแฟทดสอบ 45 เมื่อวาน`, sent through the live webhook on 2026-11-09, was saved for 8 Nov with the note `กาแฟทดสอบ`. The test entry was then deleted on the web. To post a test update from Git Bash, write the JSON to a UTF-8 file and send it with `--data-binary @file`, because Thai text in a command-line argument arrives garbled.
+- Telegram reminders: confirmed 2026-11-09. A manual production cron run for the test subscription "ทดสอบ Telegram (ลบได้)", due 2026-11-10, sent both the email and the Telegram reminder. The "จ่ายแล้ว" tap is still untried; tap it, then delete that test subscription.
+- Reminder email: confirmed 2026-11-09 by the same run. The scheduled cron has run nightly since 2026-11-07 with no errors.
+- `/undo` and `/edit` passed tests but have not been tried in the live bot.
 
 ## Proposed next, owner to choose
 
@@ -36,7 +37,6 @@ Small items:
 - None open. Done 2026-11-09: `engines.node` is `22.x`, the daily cron deletes `TelegramUpdate` rows older than 30 days, and the Dashboard has the "ใช้ไปเดือนนี้" card.
 
 Features:
-- Editing an amount from the bot.
 - A nightly summary; check Vercel Hobby cron limits first.
 - Monthly budgets per category.
 - Editing repeated shifts as a series.

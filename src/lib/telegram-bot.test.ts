@@ -35,6 +35,7 @@ import { isSlipOcrConfigured, readSlip } from "@/lib/slip-ocr";
 import { recordSubscriptionPayment } from "@/lib/subscription-payment";
 import { answerCallbackQuery, downloadFile, editMessageText, getFilePath, sendMessage } from "@/lib/telegram";
 import { handleTelegramUpdate } from "@/lib/telegram-bot";
+import type { InlineKeyboard } from "@/lib/telegram-parse";
 
 const OWNER = 42;
 const config = { token: "t", webhookSecret: "s", allowedChatId: String(OWNER) };
@@ -188,7 +189,7 @@ describe("handleTelegramUpdate", () => {
       expect.objectContaining({ where: expect.objectContaining({ source: "TELEGRAM" }), take: 8 }),
     );
     expect(db.expenseSlip.delete).not.toHaveBeenCalled();
-    const keyboard = vi.mocked(sendMessage).mock.calls[0][2]!.inline_keyboard;
+    const keyboard = (vi.mocked(sendMessage).mock.calls[0][2] as InlineKeyboard).inline_keyboard;
     expect(keyboard[0][0].callback_data).toBe(`del:${EXPENSE_ID}`);
     expect(keyboard.at(-1)![0]).toEqual({ text: "ปิด", callback_data: "delno" });
   });
@@ -458,5 +459,72 @@ describe("subscription reminder paid button", () => {
     tap.callback_query.message.chat.id = 7;
     await handleTelegramUpdate(tap, config);
     expect(recordSubscriptionPayment).not.toHaveBeenCalled();
+  });
+});
+
+describe("/edit amount", () => {
+  const ID = "cmh7k2x9b0000abcd1234efgh";
+  const row = {
+    id: ID,
+    amount: 45,
+    paidDate: new Date("2026-11-08T00:00:00.000Z"),
+    paidTime: null,
+    payee: null,
+    note: "กาแฟ",
+    driveFileId: null,
+    source: "TELEGRAM",
+  };
+  const prompt = `แก้ยอดรายการนี้\n8 พ.ย. · กาแฟ · 45.00 บาท\n\nตอบกลับ (reply) ข้อความนี้ด้วยยอดใหม่ เช่น 55\nรหัสรายการ ${ID}`;
+  function reply(text: string, updateId: number) {
+    return {
+      update_id: updateId,
+      message: {
+        message_id: 41,
+        chat: { id: OWNER, type: "private" },
+        text,
+        reply_to_message: { message_id: 40, chat: { id: OWNER, type: "private" }, text: prompt },
+      },
+    };
+  }
+
+  it("lists recent bot entries to pick from", async () => {
+    db.expenseSlip.findMany.mockResolvedValue([row]);
+    await handleTelegramUpdate(textUpdate("/edit", OWNER, 60), config);
+    const [, text, keyboard] = vi.mocked(sendMessage).mock.calls[0];
+    expect(text).toBe("เลือกรายการที่จะแก้ยอด");
+    expect((keyboard as InlineKeyboard).inline_keyboard[0][0].callback_data).toBe(`edit:${ID}`);
+  });
+
+  it("asks for the new amount as a forced reply after a pick", async () => {
+    db.expenseSlip.findUnique.mockResolvedValue(row);
+    await handleTelegramUpdate(
+      { update_id: 61, callback_query: { id: "cb", data: `edit:${ID}`, message: { message_id: 50, chat: { id: OWNER, type: "private" }, text: "เลือกรายการที่จะแก้ยอด" } } },
+      config,
+    );
+    const [, text, markup] = vi.mocked(sendMessage).mock.calls[0];
+    expect(text).toContain(`รหัสรายการ ${ID}`);
+    expect(markup).toMatchObject({ force_reply: true });
+  });
+
+  it("updates the amount from a reply to the prompt", async () => {
+    db.expenseSlip.findUnique.mockResolvedValue(row);
+    db.expenseSlip.update.mockResolvedValue({});
+    await handleTelegramUpdate(reply("55", 62), config);
+    expect(db.expenseSlip.update).toHaveBeenCalledWith({ where: { id: ID }, data: { amount: 55 } });
+    expect(db.expenseSlip.create).not.toHaveBeenCalled();
+    expect(vi.mocked(sendMessage).mock.calls[0][1]).toMatch(/^แก้ยอดแล้ว 45.00 → 55.00 บาท/);
+  });
+
+  it("refuses a reply that is not just an amount", async () => {
+    await handleTelegramUpdate(reply("กาแฟ 55", 63), config);
+    expect(db.expenseSlip.update).not.toHaveBeenCalled();
+    expect(db.expenseSlip.create).not.toHaveBeenCalled();
+    expect(vi.mocked(sendMessage).mock.calls[0][1]).toContain("พิมพ์เฉพาะยอดเงิน");
+  });
+
+  it("does not edit entries from the web", async () => {
+    db.expenseSlip.findUnique.mockResolvedValue({ ...row, source: "WEB" });
+    await handleTelegramUpdate(reply("55", 64), config);
+    expect(db.expenseSlip.update).not.toHaveBeenCalled();
   });
 });

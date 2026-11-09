@@ -1,5 +1,5 @@
 import "server-only";
-import type { InlineKeyboard } from "@/lib/telegram-parse";
+import type { ForceReply, InlineKeyboard } from "@/lib/telegram-parse";
 
 const API_ORIGIN = "https://api.telegram.org";
 
@@ -31,7 +31,7 @@ async function callApi<T>(method: string, body: Record<string, unknown>): Promis
 export async function sendMessage(
   chatId: number,
   text: string,
-  replyMarkup?: InlineKeyboard,
+  replyMarkup?: InlineKeyboard | ForceReply,
   replyToMessageId?: number,
 ): Promise<void> {
   await callApi("sendMessage", {

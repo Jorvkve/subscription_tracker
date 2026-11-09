@@ -18,6 +18,8 @@ export type TgCallbackQuery = { id: string; data?: string; message?: TgMessage }
 export type TgUpdate = { update_id: number; message?: TgMessage; callback_query?: TgCallbackQuery };
 
 export type InlineKeyboard = { inline_keyboard: { text: string; callback_data: string }[][] };
+/** Opens the reply box on the owner's side, so the next message answers the prompt. */
+export type ForceReply = { force_reply: true; input_field_placeholder?: string };
 
 export type ParsedExpense = { amount: number; note: string | null };
 
@@ -154,10 +156,10 @@ export function buildRetryImageKeyboard(): InlineKeyboard {
   return { inline_keyboard: [[{ text: "ลองใหม่", callback_data: RETRY_IMAGE_CALLBACK }]] };
 }
 
-export type BotCommand = "start" | "help" | "today" | "month" | "undo";
+export type BotCommand = "start" | "help" | "today" | "month" | "undo" | "edit";
 
 export function parseCommand(text: string): BotCommand | null {
-  const match = /^\/(start|help|today|month|undo)(?:@\w+)?(?:\s|$)/i.exec(text.trim());
+  const match = /^\/(start|help|today|month|undo|edit)(?:@\w+)?(?:\s|$)/i.exec(text.trim());
   return match ? (match[1].toLowerCase() as BotCommand) : null;
 }
 
@@ -239,6 +241,49 @@ export function buildDeleteConfirm(expenseId: string): InlineKeyboard {
       ],
     ],
   };
+}
+
+export type EditCallback = { action: "pick"; expenseId: string } | { action: "cancel" };
+
+const EDIT_PATTERN = /^edit:([a-z0-9]{20,32})$/;
+
+export function encodeEditCallback(callback: EditCallback): string {
+  return callback.action === "cancel" ? "editno" : `edit:${callback.expenseId}`;
+}
+
+export function decodeEditCallback(data: string): EditCallback | null {
+  if (data === "editno") return { action: "cancel" };
+  const match = EDIT_PATTERN.exec(data);
+  return match ? { action: "pick", expenseId: match[1] } : null;
+}
+
+export function buildEditPicker(expenses: readonly DeletableExpense[], today: string): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      ...expenses.map((expense) => [
+        { text: describeExpense(expense, today), callback_data: encodeEditCallback({ action: "pick", expenseId: expense.id }) },
+      ]),
+      [{ text: "ปิด", callback_data: encodeEditCallback({ action: "cancel" }) }],
+    ],
+  };
+}
+
+// The prompt carries the entry id, so the owner's reply needs no stored state.
+const EDIT_REF = /รหัสรายการ ([a-z0-9]{20,32})\s*$/;
+
+export function buildEditPrompt(summary: string, expenseId: string): string {
+  return `แก้ยอดรายการนี้\n${summary}\n\nตอบกลับ (reply) ข้อความนี้ด้วยยอดใหม่ เช่น 55\nรหัสรายการ ${expenseId}`;
+}
+
+/** The entry id when a message replies to an edit prompt, otherwise null. */
+export function editPromptExpenseId(promptText: string | undefined): string | null {
+  return promptText ? (EDIT_REF.exec(promptText)?.[1] ?? null) : null;
+}
+
+/** The new amount in an edit reply: a number alone, or with ฿ or บาท. */
+export function parseEditAmount(text: string): number | null {
+  const parsed = parseExpenseText(text);
+  return parsed && parsed.note === null ? parsed.amount : null;
 }
 
 export function buildCategoryKeyboard(expenseId: string): InlineKeyboard {
@@ -332,6 +377,7 @@ export const HELP_TEXT = [
   "/today ดูรายการวันนี้",
   "/month สรุปเดือนนี้",
   "/undo เลือกรายการที่จะลบ",
+  "/edit แก้ยอดเงินของรายการ",
 ].join("\n");
 
 export const FORMAT_HINT = "พิมพ์ชื่อรายการกับยอดเงิน เช่น ข้าว 60 หรือพิมพ์ /help";
