@@ -168,6 +168,18 @@ export async function markPaid(id: string) {
   redirect(`/subscriptions/${id}?paid=1`);
 }
 
+/** Dashboard switch: flips a subscription between ACTIVE and PAUSED only. */
+export async function setSubscriptionActive(id: string, active: boolean) {
+  await requireSession();
+  await getPrisma().subscription.updateMany({
+    where: { id, status: active ? SubscriptionStatus.PAUSED : SubscriptionStatus.ACTIVE },
+    data: { status: active ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PAUSED },
+  });
+  revalidatePath("/");
+  revalidatePath("/subscriptions");
+  revalidatePath(`/subscriptions/${id}`);
+}
+
 export async function markReminderRead(id: string) {
   await requireSession();
   await getPrisma().reminder.update({

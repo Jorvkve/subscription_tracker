@@ -12,10 +12,12 @@ export {
   ClockCounterClockwise as ClockCounterClockwiseIcon,
   Clock as ClockIcon,
   Folder as FolderIcon,
+  Gift as GiftIcon,
   ListBullets as ListBulletsIcon,
   MapPin as MapPinIcon,
   Plus as PlusIcon,
   Receipt as ReceiptIcon,
   SignOut as SignOutIcon,
   SquaresFour as SquaresFourIcon,
+  Target as TargetIcon,
 } from "@phosphor-icons/react/dist/ssr";

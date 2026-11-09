@@ -5,7 +5,9 @@ import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
 import { TaskStatusToggle } from "@/components/task-status-toggle";
 import { TaskPriority, TaskStatus } from "@/generated/prisma/client";
-import { appDateString, dateOnly, formatDate, utcDate } from "@/lib/dates";
+import { HeroHeader, firstName } from "@/components/hero-header";
+import { shiftTone, weekDates } from "@/lib/dashboard";
+import { addDays, appDateString, dateOnly, formatDate, utcDate } from "@/lib/dates";
 import { getPrisma } from "@/lib/prisma";
 import { formatDuration, shiftDurationMinutes } from "@/lib/time-of-day";
 
@@ -46,7 +48,7 @@ const priorityLabels: Record<TaskPriority, string> = {
 export default async function SchedulePage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string | string[] }>;
+  searchParams: Promise<{ month?: string | string[]; week?: string | string[] }>;
 }) {
   const session = await auth();
   if (!session?.user?.email) redirect("/signin");
@@ -57,8 +59,16 @@ export default async function SchedulePage({
   const monthStart = `${currentMonth}-01`;
   const monthLastDay = monthEnd(currentMonth);
 
+  const anchor = typeof query.week === "string" && /^\d{4}-\d{2}-\d{2}$/.test(query.week) && !Number.isNaN(Date.parse(query.week))
+    ? query.week
+    : today;
+  const gridStart = weekDates(anchor)[0];
+  const gridDates = Array.from({ length: 14 }, (_, index) => addDays(gridStart, index));
+  const thisWeek = weekDates(today);
+  const tomorrow = addDays(today, 1);
+
   const db = getPrisma();
-  const [openTasks, completedTasks, monthShifts] = await Promise.all([
+  const [openTasks, completedTasks, monthShifts, gridShifts, weekShifts] = await Promise.all([
     db.task.findMany({
       where: {
         status: { in: [TaskStatus.TODO, TaskStatus.IN_PROGRESS] },
@@ -80,7 +90,33 @@ export default async function SchedulePage({
       },
       orderBy: [{ date: "asc" }, { startTime: "asc" }],
     }),
+    db.workShift.findMany({
+      where: { date: { gte: utcDate(gridDates[0]), lte: utcDate(gridDates[13]) } },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+    }),
+    // This week, plus tomorrow when today is Sunday.
+    db.workShift.findMany({
+      where: { date: { gte: utcDate(thisWeek[0]), lte: utcDate(tomorrow > thisWeek[6] ? tomorrow : thisWeek[6]) } },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+    }),
   ]);
+
+  const gridByDate = new Map<string, typeof gridShifts>();
+  for (const shift of gridShifts) {
+    const key = dateOnly(shift.date);
+    gridByDate.set(key, [...(gridByDate.get(key) ?? []), shift]);
+  }
+  const thisWeekShifts = weekShifts.filter((shift) => dateOnly(shift.date) <= thisWeek[6]);
+  const weekMinutes = thisWeekShifts.reduce((sum, shift) => sum + shiftDurationMinutes(shift.startTime, shift.endTime), 0);
+  const hoursTarget = 40;
+  const soonShifts = weekShifts.filter((shift) => {
+    const date = dateOnly(shift.date);
+    return date === today || date === tomorrow;
+  });
+  const dueTasks = openTasks
+    .filter((task) => task.dueDate && dateOnly(task.dueDate) <= addDays(today, 2))
+    .sort((a, b) => (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0));
+  const weekdayShort = (date: string) => new Intl.DateTimeFormat("th-TH", { weekday: "short", timeZone: "UTC" }).format(utcDate(date));
 
   // Open tasks sorted by due date with no-date last
   const sortedOpenTasks = [...openTasks].sort((a, b) => {
@@ -105,21 +141,80 @@ export default async function SchedulePage({
 
   return (
     <AppShell email={session.user.email} active="schedule">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">WORK & SCHEDULE</p>
-          <h1>ตารางงาน</h1>
-          <p className="muted">จัดการงานสิ่งที่ต้องทำและตารางกะการทำงาน</p>
+      <HeroHeader title="ตารางงาน" accent="& กะงาน" name={firstName(session.user)} tagline="จดกะงานไว้ ไม่พลาดสักกะ ⏰" />
+
+      <div className="shift-top-grid">
+        <section className="panel" aria-labelledby="two-week-title">
+          <div className="card-heading">
+            <h2 id="two-week-title" className="card-title">ปฏิทินกะ <span className="card-title-sub">(2 สัปดาห์)</span></h2>
+            <nav className="calendar-controls" aria-label="เปลี่ยนช่วงสัปดาห์">
+              <Link className="calendar-nav-button" href={`/schedule?week=${addDays(gridStart, -14)}`} aria-label="2 สัปดาห์ก่อนหน้า"><CaretLeftIcon aria-hidden /></Link>
+              <Link className="calendar-today-button" href="/schedule">สัปดาห์นี้</Link>
+              <Link className="calendar-nav-button" href={`/schedule?week=${addDays(gridStart, 14)}`} aria-label="2 สัปดาห์ถัดไป"><CaretRightIcon aria-hidden /></Link>
+            </nav>
+          </div>
+          <p className="muted two-week-range">{formatDate(gridDates[0])} – {formatDate(gridDates[13])}</p>
+          <ol className="two-week">
+            {gridDates.map((date) => {
+              const dayShifts = gridByDate.get(date) ?? [];
+              return (
+                <li className={`tw-day${date === today ? " tw-today" : ""}${dayShifts.length === 0 ? " tw-off" : ""}`} key={date}>
+                  <span className="tw-date">{weekdayShort(date)} <b>{Number(date.slice(8))}</b></span>
+                  {dayShifts.length === 0
+                    ? <span className="tw-empty">ว่าง</span>
+                    : dayShifts.map((shift) => (
+                      <Link className={`shift-pill tw-pill tone-${shiftTone(shift.startTime)}`} href={`/schedule/shifts/${shift.id}/edit`} key={shift.id}>
+                        <span>{shift.title}</span>
+                        <small>{shift.startTime}–{shift.endTime}</small>
+                      </Link>
+                    ))}
+                </li>
+              );
+            })}
+          </ol>
+          <div className="card-actions">
+            <Link className="button button-primary" href="/schedule/shifts/new"><PlusIcon aria-hidden /> เพิ่มกะงาน</Link>
+            <Link className="button button-blue" href="/schedule/tasks/new"><PlusIcon aria-hidden /> เพิ่มงาน</Link>
+          </div>
+        </section>
+
+        <div className="shift-side">
+          <section className="panel" aria-labelledby="hustle-title">
+            <h2 id="hustle-title" className="card-title card-title-gap">Hustle สัปดาห์นี้ <span aria-hidden>⏰</span></h2>
+            <div className="hustle-stats">
+              <div><span className="muted">ชั่วโมงรวม</span><strong className="big-number">{formatDuration(weekMinutes)}</strong></div>
+              <div><span className="muted">จำนวนกะ</span><strong className="big-number">{thisWeekShifts.length} <small className="big-number-unit">กะ</small></strong></div>
+            </div>
+            <div className="progress" role="progressbar" aria-label={`ชั่วโมงทำงานเทียบเป้า ${hoursTarget} ชั่วโมง`} aria-valuemin={0} aria-valuemax={hoursTarget} aria-valuenow={Math.round(weekMinutes / 60)}>
+              <span style={{ width: `${Math.min(100, (weekMinutes / 60 / hoursTarget) * 100)}%` }} />
+            </div>
+            <p className="muted card-note">เทียบกับ {hoursTarget} ชั่วโมงต่อสัปดาห์ <span aria-hidden>⚡</span></p>
+          </section>
+
+          <section className="panel" aria-labelledby="shift-alert-title">
+            <h2 id="shift-alert-title" className="card-title card-title-gap">เตือนความจำ <span aria-hidden>🚨</span></h2>
+            {soonShifts.length + dueTasks.length === 0 ? <p className="empty-note">ไม่มีอะไรด่วนใน 2 วันนี้ <span aria-hidden>😌</span></p> : (
+              <ul className="alert-list">
+                {soonShifts.map((shift) => (
+                  <li className="alert-item" key={shift.id}>
+                    <span aria-hidden>{shiftTone(shift.startTime) === "night" ? "🌙" : "💼"}</span>
+                    <Link href={`/schedule/shifts/${shift.id}/edit`}>{dateOnly(shift.date) === today ? "วันนี้" : "พรุ่งนี้"}เข้ากะ {shift.startTime} น. ({shift.title})</Link>
+                  </li>
+                ))}
+                {dueTasks.map((task) => {
+                  const due = task.dueDate ? dateOnly(task.dueDate) : today;
+                  return (
+                    <li className={due < today ? "alert-item alert-danger" : "alert-item"} key={task.id}>
+                      <span aria-hidden>📝</span>
+                      <Link href={`/schedule/tasks/${task.id}/edit`}>{task.title} · {due < today ? "เลยกำหนด" : due === today ? "ส่งวันนี้" : `ส่ง ${formatDate(due)}`}</Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </div>
-        <div className="header-actions">
-          <Link className="button button-secondary" href="/schedule/shifts/new">
-            <PlusIcon aria-hidden /> เพิ่มกะงาน
-          </Link>
-          <Link className="button button-primary" href="/schedule/tasks/new">
-            <PlusIcon aria-hidden /> เพิ่มงาน
-          </Link>
-        </div>
-      </header>
+      </div>
 
       <div className="schedule-layout">
         {/* Panel 1: Tasks */}

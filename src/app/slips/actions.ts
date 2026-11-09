@@ -11,7 +11,8 @@ import {
   trashSlip,
   uploadSlip,
 } from "@/lib/google-drive";
-import { utcDate } from "@/lib/dates";
+import { appDateString, appTimeString, utcDate } from "@/lib/dates";
+import { EXPENSE_CATEGORIES } from "@/lib/expense-categories";
 import type { FormActionState } from "@/app/actions";
 
 function driveErrorMessage(error: unknown): string {
@@ -197,4 +198,37 @@ export async function deleteSlip(id: string): Promise<void> {
 
   revalidatePath("/slips");
   redirect("/slips");
+}
+
+/** Money Tracker quick add: an image-less THB expense for today in one of the bot's categories. */
+export async function quickAddExpense(formData: FormData): Promise<void> {
+  await requireSession();
+  const category = String(formData.get("category") ?? "");
+  let parsed;
+  try {
+    if (!EXPENSE_CATEGORIES.some((item) => item.key === category)) throw new Error("หมวดหมู่ไม่ถูกต้อง");
+    const input = new FormData();
+    input.set("amount", String(formData.get("amount") ?? ""));
+    input.set("currency", "THB");
+    input.set("paidDate", appDateString());
+    input.set("paidTime", appTimeString());
+    input.set("payee", String(formData.get("payee") ?? ""));
+    input.set("category", category);
+    parsed = parseSlipForm(input);
+    await getPrisma().expenseSlip.create({
+      data: {
+        amount: parsed.amount,
+        currency: parsed.currency,
+        paidDate: utcDate(parsed.paidDate),
+        paidTime: parsed.paidTime,
+        payee: parsed.payee,
+        category: parsed.category,
+      },
+    });
+  } catch {
+    redirect("/slips?quick=error");
+  }
+  revalidatePath("/");
+  revalidatePath("/slips");
+  redirect("/slips?quick=saved");
 }

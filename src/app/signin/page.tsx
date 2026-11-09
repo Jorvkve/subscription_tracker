@@ -4,7 +4,7 @@ export default function SignInPage() {
   return (
     <main className="signin-page">
       <section className="signin-card">
-        <div className="brand-mark" aria-hidden="true">S</div>
+        <div className="brand-mark" aria-hidden="true">$</div>
         <p className="eyebrow">PERSONAL FINANCE</p>
         <h1>Subscription tracker</h1>
         <p className="muted">ดูแลค่าสมาชิกรายเดือนและกำหนดชำระในที่เดียว</p>

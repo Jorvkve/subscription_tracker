@@ -11,7 +11,7 @@ const sans = IBM_Plex_Sans_Thai({
 });
 
 export const viewport: Viewport = {
-  themeColor: "#0b0e14",
+  themeColor: "#0c0c0e",
   viewportFit: "cover",
 };
 

@@ -1,67 +1,81 @@
 import Link from "next/link";
-import { ArrowRightIcon, CaretLeftIcon, CaretRightIcon, FolderIcon, PlusIcon, ReceiptIcon } from "@/components/icons";
+import { ArrowRightIcon, CaretLeftIcon, CaretRightIcon, FolderIcon, PlusIcon } from "@/components/icons";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { quickAddExpense } from "@/app/slips/actions";
 import { AppShell } from "@/components/app-shell";
+import { HeroHeader, firstName } from "@/components/hero-header";
+import { SpendDonut } from "@/components/spend-donut";
+import { categoryEmoji, monthKeys, relativeDayLabel, spendByCategory } from "@/lib/dashboard";
+import { appDateString, dateOnly, formatDate, utcDate } from "@/lib/dates";
+import { money } from "@/lib/display";
+import { EXPENSE_CATEGORIES, categoryLabel } from "@/lib/expense-categories";
 import { getPrisma } from "@/lib/prisma";
-import { appDateString, formatDate, dateOnly, utcDate } from "@/lib/dates";
 
 function selectedMonth(value: string | string[] | undefined, today: string): string {
   if (typeof value !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return today.slice(0, 7);
   return value;
 }
 
-function monthTitle(month: string): string {
+function monthTitle(month: string, format: "long" | "short" = "long"): string {
   return new Intl.DateTimeFormat("th-TH", {
-    month: "long",
-    year: "numeric",
+    month: format,
+    ...(format === "long" ? { year: "numeric" } : {}),
     timeZone: "UTC",
   }).format(new Date(`${month}-01T00:00:00.000Z`));
+}
+
+function lastDayOf(month: string): Date {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(Date.UTC(year, monthNumber, 0));
 }
 
 export default async function SlipsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string | string[]; drive?: string | string[] }>;
+  searchParams: Promise<{ month?: string | string[]; drive?: string | string[]; quick?: string | string[] }>;
 }) {
   const session = await auth();
   if (!session?.user?.email) redirect("/signin");
 
   const query = await searchParams;
-
-  const monthLabel = selectedMonth(query.month, appDateString());
-  const [selectedYear, selectedMonthNumber] = monthLabel.split("-").map(Number);
-  const monthStart = utcDate(`${monthLabel}-01`);
-  const monthEnd = new Date(Date.UTC(selectedYear, selectedMonthNumber, 0));
+  const today = appDateString();
+  const monthLabel = selectedMonth(query.month, today);
+  const trendMonths = monthKeys(monthLabel, 6);
 
   const prisma = getPrisma();
-
-  const [driveConnection, slips] = await Promise.all([
+  const [driveConnection, slips, trendSlips] = await Promise.all([
     prisma.driveConnection.findUnique({ where: { id: "default" }, select: { id: true } }),
     prisma.expenseSlip.findMany({
-      where: {
-        paidDate: {
-          gte: monthStart,
-          lte: monthEnd,
-        },
-      },
-      include: {
-        subscription: { select: { id: true, name: true } },
-      },
+      where: { paidDate: { gte: utcDate(`${monthLabel}-01`), lte: lastDayOf(monthLabel) } },
+      include: { subscription: { select: { id: true, name: true } } },
       orderBy: [{ paidDate: "desc" }, { createdAt: "desc" }],
+    }),
+    prisma.expenseSlip.findMany({
+      where: { currency: "THB", paidDate: { gte: utcDate(`${trendMonths[0]}-01`), lte: lastDayOf(monthLabel) } },
+      select: { amount: true, paidDate: true },
     }),
   ]);
 
   const isConnected = !!driveConnection;
 
-  // Totals by currency
   const totals: Record<string, number> = {};
-  for (const slip of slips) {
-    const amount = Number(slip.amount);
-    totals[slip.currency] = (totals[slip.currency] ?? 0) + amount;
-  }
+  for (const slip of slips) totals[slip.currency] = (totals[slip.currency] ?? 0) + Number(slip.amount);
+  const thbTotal = totals.THB ?? 0;
+  const otherTotals = Object.entries(totals).filter(([currency]) => currency !== "THB");
+  const categories = spendByCategory(
+    slips.filter((slip) => slip.currency === "THB").map((slip) => ({ category: slip.category, amount: Number(slip.amount) })),
+  );
+  const daysCounted = monthLabel === today.slice(0, 7) ? Number(today.slice(8)) : lastDayOf(monthLabel).getUTCDate();
 
-  // Build prev/next month links
+  const trend = trendMonths.map((month) => ({ month, amount: 0 }));
+  for (const slip of trendSlips) {
+    const entry = trend.find((item) => item.month === dateOnly(slip.paidDate).slice(0, 7));
+    if (entry) entry.amount += Number(slip.amount);
+  }
+  const trendMax = Math.max(...trend.map((item) => item.amount), 1);
+
+  const [selectedYear, selectedMonthNumber] = monthLabel.split("-").map(Number);
   const prevDate = new Date(Date.UTC(selectedYear, selectedMonthNumber - 2, 1));
   const nextDate = new Date(Date.UTC(selectedYear, selectedMonthNumber, 1));
   const prevMonth = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -69,37 +83,15 @@ export default async function SlipsPage({
 
   return (
     <AppShell email={session.user.email} active="slips">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">EXPENSE SLIPS</p>
-          <h1>สลิปค่าใช้จ่าย</h1>
-          <p className="muted">
-            บันทึกและจัดการสลิปการชำระเงินของคุณ
-            {isConnected && (
-              <>
-                {" · "}
-                <Link className="text-link" href="/api/drive/connect">
-                  เชื่อมต่อ Google Drive ใหม่
-                </Link>
-              </>
-            )}
-          </p>
-        </div>
-        <Link className="button button-primary" href="/slips/new">
-          <PlusIcon aria-hidden /> เพิ่มสลิป
-        </Link>
-      </header>
+      <HeroHeader title="Money" accent="Tracker" name={firstName(session.user)} tagline="มาเช็กกระแสเงินกันหน่อย 💸">
+        <Link className="button button-primary" href="/slips/new"><PlusIcon aria-hidden /> เพิ่มสลิป</Link>
+        {isConnected && <Link className="button button-secondary" href="/api/drive/connect">เชื่อมต่อ Google Drive ใหม่</Link>}
+      </HeroHeader>
 
-      {query.drive === "connected" && (
-        <div className="success-banner stack-gap">
-          เชื่อมต่อ Google Drive สำเร็จแล้ว
-        </div>
-      )}
-      {query.drive === "error" && (
-        <div className="error-banner stack-gap">
-          เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive กรุณาลองใหม่อีกครั้ง
-        </div>
-      )}
+      {query.drive === "connected" && <div className="success-banner stack-gap">เชื่อมต่อ Google Drive สำเร็จแล้ว</div>}
+      {query.drive === "error" && <div className="error-banner stack-gap">เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive กรุณาลองใหม่อีกครั้ง</div>}
+      {query.quick === "saved" && <div className="success-banner stack-gap">บันทึกรายจ่ายแล้ว 🎉</div>}
+      {query.quick === "error" && <div className="error-banner stack-gap">บันทึกไม่สำเร็จ ตรวจสอบจำนวนเงินแล้วลองใหม่อีกครั้ง</div>}
 
       {!isConnected && (
         <div className="empty-callout stack-gap">
@@ -108,93 +100,131 @@ export default async function SlipsPage({
             <strong>ยังไม่ได้เชื่อมต่อ Google Drive</strong>
             <p>
               สลิปจะถูกเก็บในไฟล์ Google Drive ของคุณ{" "}
-              <Link className="text-link" href="/api/drive/connect">
-                เชื่อมต่อ Google Drive <ArrowRightIcon aria-hidden />
-              </Link>
+              <Link className="text-link" href="/api/drive/connect">เชื่อมต่อ Google Drive <ArrowRightIcon aria-hidden /></Link>
             </p>
           </div>
         </div>
       )}
 
-      <section className="panel stack-gap">
-        <div className="panel-heading">
-          <div>
-            <h2>
-              เดือน{monthTitle(monthLabel)}{" "}
-              <span className="subtle-count">({slips.length} รายการ)</span>
-            </h2>
-            {Object.keys(totals).length > 0 && (
-              <p className="muted slip-total">
-                รวม:{" "}
-                {Object.entries(totals)
-                  .map(([cur, amt]) => `${amt.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`)
-                  .join(" · ")}
-              </p>
-            )}
-          </div>
-          <div className="month-switcher">
-            <Link className="button button-secondary button-sm" href={`/slips?month=${prevMonth}`}>
-              <CaretLeftIcon aria-hidden />
-            </Link>
-            <span className="month-indicator">{monthTitle(monthLabel)}</span>
-            <Link className="button button-secondary button-sm" href={`/slips?month=${nextMonth}`}>
-              <CaretRightIcon aria-hidden />
-            </Link>
-          </div>
+      <div className="money-grid">
+        <div className="money-col">
+          <section className="panel money-total" aria-labelledby="money-total-title">
+            <div className="card-heading">
+              <h2 id="money-total-title" className="card-title">ใช้ไปเดือนนี้ <span className="card-title-sub">({monthTitle(monthLabel)})</span></h2>
+              <nav className="month-switcher" aria-label="เปลี่ยนเดือน">
+                <Link className="calendar-nav-button" href={`/slips?month=${prevMonth}`} aria-label="เดือนก่อนหน้า"><CaretLeftIcon aria-hidden /></Link>
+                <Link className="calendar-nav-button" href={`/slips?month=${nextMonth}`} aria-label="เดือนถัดไป"><CaretRightIcon aria-hidden /></Link>
+              </nav>
+            </div>
+            <div className="money-total-body">
+              <div>
+                <strong className="big-number">{money(thbTotal, "THB")}</strong>
+                {otherTotals.map(([currency, amount]) => <span className="big-number-extra" key={currency}>+ {money(amount, currency)}</span>)}
+                <p className="muted dash-line">
+                  {slips.length} รายการ · เฉลี่ย {money(thbTotal / daysCounted, "THB")} / วัน
+                </p>
+              </div>
+              <span className="money-bag" aria-hidden>💰</span>
+            </div>
+          </section>
+
+          <section className="panel" aria-labelledby="trend-title">
+            <div className="card-heading">
+              <h2 id="trend-title" className="card-title">รายจ่าย 6 เดือน <span className="card-title-sub">(บาท)</span></h2>
+            </div>
+            <ol className="bar-chart">
+              {trend.map((item) => (
+                <li key={item.month} className={item.month === monthLabel ? "bar-current" : undefined} aria-label={`${monthTitle(item.month)} ${money(item.amount, "THB")}`}>
+                  <span className="bar-value">{item.amount > 0 ? Math.round(item.amount).toLocaleString("th-TH") : "–"}</span>
+                  <span className="bar-track"><span className="bar-fill" style={{ height: `${Math.max((item.amount / trendMax) * 100, item.amount > 0 ? 4 : 0)}%` }} /></span>
+                  <span className="bar-label">{monthTitle(item.month, "short")}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section className="panel" aria-labelledby="quick-title">
+            <div className="card-heading">
+              <h2 id="quick-title" className="card-title">บันทึกด่วน <span aria-hidden>⚡</span></h2>
+              <span className="muted card-note">วันนี้ · ไม่ต้องมีรูปสลิป</span>
+            </div>
+            <form className="quick-add" action={quickAddExpense}>
+              <fieldset className="chip-options">
+                <legend className="sr-only">หมวดหมู่</legend>
+                {EXPENSE_CATEGORIES.map((category, index) => (
+                  <label className="chip-option" key={category.key}>
+                    <input type="radio" name="category" value={category.key} defaultChecked={index === 0} />
+                    <span>{category.label} {categoryEmoji(category.key)}</span>
+                  </label>
+                ))}
+              </fieldset>
+              <div className="quick-add-row">
+                <label className="field">
+                  <span className="sr-only">รายการ</span>
+                  <input name="payee" maxLength={200} placeholder="รายการ เช่น ข้าวมันไก่" />
+                </label>
+                <label className="field quick-amount">
+                  <span className="sr-only">จำนวนเงิน (บาท)</span>
+                  <input name="amount" inputMode="decimal" pattern="\d+(\.\d{1,2})?" required placeholder="฿ 0.00" />
+                </label>
+                <button className="button button-primary" type="submit">บันทึก</button>
+              </div>
+            </form>
+          </section>
         </div>
 
-        {slips.length === 0 ? (
-          <div className="empty-note large-empty">
-            ยังไม่มีสลิปในเดือนนี้{" "}
-            <Link className="text-link" href="/slips/new">
-              เพิ่มสลิปแรก <ArrowRightIcon aria-hidden />
-            </Link>
-          </div>
-        ) : (
-          <div className="slip-list">
-            {slips.map((slip) => (
-              <div className="slip-row" key={slip.id}>
-                <div className="slip-thumb">
-                  {slip.driveFileId ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={`/api/slips/${slip.id}/image`}
-                      alt={slip.fileName ?? "สลิป"}
-                      loading="lazy"
-                      className="slip-thumb-img"
-                    />
-                  ) : (
-                    <ReceiptIcon aria-hidden size={24} />
-                  )}
-                </div>
-                <div className="slip-info">
-                  <strong>
-                    {slip.payee || slip.note || "ไม่ระบุผู้รับเงิน"}
-                  </strong>
-                  <small>
-                    {formatDate(dateOnly(slip.paidDate))}
-                    {slip.paidTime ? ` ${slip.paidTime} น.` : ""}
-                    {" · "}
-                    {slip.category}
-                    {slip.source === "TELEGRAM" ? " · Telegram" : ""}
-                    {slip.subscription ? ` · ${slip.subscription.name}` : ""}
-                  </small>
-                </div>
-                <div className="slip-amount">
-                  {Number(slip.amount).toLocaleString("th-TH", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}{" "}
-                  {slip.currency}
-                </div>
-                <Link className="text-link" href={`/slips/${slip.id}`}>
-                  รายละเอียด <ArrowRightIcon aria-hidden />
-                </Link>
+        <div className="money-col">
+          <section className="panel" aria-labelledby="where-title">
+            <div className="card-heading">
+              <h2 id="where-title" className="card-title">เงินหายไปไหน? <span aria-hidden>🤔</span></h2>
+            </div>
+            {categories.length === 0
+              ? <p className="empty-note">ยังไม่มีรายจ่ายในเดือนนี้ <span aria-hidden>😴</span></p>
+              : <SpendDonut categories={categories} emoji className="donut-side" />}
+          </section>
+
+          <section className="panel" aria-labelledby="tx-title">
+            <div className="card-heading">
+              <h2 id="tx-title" className="card-title">รายการล่าสุด <span className="card-title-sub">({slips.length})</span></h2>
+            </div>
+            {slips.length === 0 ? (
+              <div className="empty-note">
+                ยังไม่มีสลิปในเดือนนี้{" "}
+                <Link className="text-link" href="/slips/new">เพิ่มสลิปแรก <ArrowRightIcon aria-hidden /></Link>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+            ) : (
+              <ul className="tx-list">
+                {slips.map((slip) => {
+                  const paid = dateOnly(slip.paidDate);
+                  return (
+                    <li key={slip.id}>
+                      <Link className="tx-row" href={`/slips/${slip.id}`}>
+                        <span className="tx-date">{relativeDayLabel(paid, today) ?? formatDate(paid)}</span>
+                        <span className="tx-thumb" aria-hidden>
+                          {slip.driveFileId
+                            // eslint-disable-next-line @next/next/no-img-element
+                            ? <img src={`/api/slips/${slip.id}/image`} alt="" loading="lazy" />
+                            : <span>{categoryEmoji(slip.category)}</span>}
+                        </span>
+                        <span className="tx-main">
+                          <strong>{slip.payee || slip.note || "ไม่ระบุผู้รับเงิน"}</strong>
+                          <small>
+                            {categoryLabel(slip.category) ?? slip.category}
+                            {slip.paidTime ? ` · ${slip.paidTime} น.` : ""}
+                            {slip.source === "TELEGRAM" ? " · Telegram" : ""}
+                            {slip.subscription ? ` · ${slip.subscription.name}` : ""}
+                          </small>
+                        </span>
+                        <span className="tx-amount">- {money(Number(slip.amount), slip.currency)}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+      </div>
     </AppShell>
   );
 }
