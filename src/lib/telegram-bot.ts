@@ -1,10 +1,11 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
-import { addDays, appDateString, appTimeString, utcDate } from "@/lib/dates";
+import { addDays, appDateString, appTimeString, formatDate, utcDate } from "@/lib/dates";
 import { categoryLabel } from "@/lib/expense-categories";
 import { DriveAuthError, DriveNotConnectedError, trashSlip, uploadSlip } from "@/lib/google-drive";
 import { getPrisma } from "@/lib/prisma";
 import { detectImageType, slipDriveFileName } from "@/lib/slip-input";
+import { isSlipOcrConfigured, readSlip } from "@/lib/slip-ocr";
 import { recordSubscriptionPayment } from "@/lib/subscription-payment";
 import {
   FileTooLargeError,
@@ -28,12 +29,12 @@ import {
   formatDaySummary,
   formatMonthSummary,
   parseCommand,
-  parseExpenseText,
+  parseEntry,
   pickImage,
   type BotCommand,
   type ImageRef,
   type InlineKeyboard,
-  type ParsedExpense,
+  type DatedExpense,
   type TgCallbackQuery,
   type TgMessage,
   type TgUpdate,
@@ -112,22 +113,37 @@ async function handleMessage(message: TgMessage) {
   const repliedImage = message.reply_to_message ? pickImage(message.reply_to_message) : null;
   if (repliedImage) return handleImage(message, repliedImage, text);
 
-  const parsed = parseExpenseText(text);
-  if (!parsed) return sendMessage(chatId, FORMAT_HINT);
-  const expense = await createExpense(parsed, null);
-  await sendSaved(chatId, expense.id, parsed, false);
+  const today = appDateString();
+  const entry = parseEntry(text, today);
+  if (!entry) return sendMessage(chatId, FORMAT_HINT);
+  if (!entry.ok) return sendMessage(chatId, entry.error);
+  const expenseData = fromEntry(entry.expense, today);
+  const expense = await createExpense(expenseData, null);
+  await sendSaved(chatId, expense.id, expenseData, today, { withImage: false });
+}
+
+/** A backdated entry has no known time of day. */
+function paidTimeFor(expense: DatedExpense, today: string): string | null {
+  return expense.date === today ? appTimeString() : null;
+}
+
+type NewExpense = DatedExpense & { paidTime: string | null; payee: string | null };
+
+function fromEntry(expense: DatedExpense, today: string): NewExpense {
+  return { ...expense, paidTime: paidTimeFor(expense, today), payee: null };
 }
 
 type StoredImage = { driveFileId: string; fileName: string; contentType: string; sizeBytes: number };
 
-async function createExpense(parsed: ParsedExpense, image: StoredImage | null) {
+async function createExpense(entry: NewExpense, image: StoredImage | null) {
   const expense = await getPrisma().expenseSlip.create({
     data: {
-      amount: parsed.amount,
+      amount: entry.amount,
       currency: "THB",
-      paidDate: utcDate(appDateString()),
-      paidTime: appTimeString(),
-      note: parsed.note,
+      paidDate: utcDate(entry.date),
+      paidTime: entry.paidTime,
+      payee: entry.payee,
+      note: entry.note,
       category: DEFAULT_CATEGORY,
       source: "TELEGRAM",
       ...image,
@@ -138,23 +154,43 @@ async function createExpense(parsed: ParsedExpense, image: StoredImage | null) {
   return expense;
 }
 
-async function sendSaved(chatId: number, expenseId: string, parsed: ParsedExpense, withImage: boolean) {
-  const parts = [`บันทึก ${formatBaht(parsed.amount)} บาท`];
-  if (parsed.note) parts.push(parsed.note);
-  if (withImage) parts.push("มีรูปสลิป");
-  await sendMessage(chatId, parts.join(" · "), buildCategoryKeyboard(expenseId));
+async function sendSaved(
+  chatId: number,
+  expenseId: string,
+  entry: NewExpense,
+  today: string,
+  options: { withImage: boolean; fromOcr?: boolean },
+) {
+  const parts = [`บันทึก ${formatBaht(entry.amount)} บาท`];
+  if (entry.payee) parts.push(entry.payee);
+  if (entry.note) parts.push(entry.note);
+  if (entry.date !== today) parts.push(`วันที่ ${formatDate(entry.date)}`);
+  if (options.fromOcr && entry.paidTime) parts.push(`${entry.paidTime} น.`);
+  if (options.withImage) parts.push("มีรูปสลิป");
+  const text = parts.join(" · ");
+  await sendMessage(
+    chatId,
+    options.fromOcr ? `อ่านจากสลิป ถ้าไม่ถูกต้องให้ลบด้วย /undo\n${text}` : text,
+    buildCategoryKeyboard(expenseId),
+  );
 }
 
 function sanitizeFileName(name: string): string {
   return name.replace(/[^\w.\-ก-๙ ]/g, "_").slice(0, 200);
 }
 
+const NO_AMOUNT_HINT = "ใส่ยอดเงินในคำบรรยายรูป หรือตอบกลับ (reply) รูปนี้ด้วยยอดเงิน เช่น 60 ข้าว";
+
+/**
+ * Saves a photo with its expense. An amount in the caption or reply wins; without one,
+ * the slip is read with Gemini when GEMINI_API_KEY is set.
+ */
 async function handleImage(message: TgMessage, image: ImageRef, text: string) {
   const chatId = message.chat.id;
-  const parsed = parseExpenseText(text);
-  if (!parsed) {
-    return sendMessage(chatId, "ใส่ยอดเงินในคำบรรยายรูป หรือตอบกลับ (reply) รูปนี้ด้วยยอดเงิน เช่น 60 ข้าว");
-  }
+  const today = appDateString();
+  const entry = parseEntry(text, today);
+  if (entry && !entry.ok) return sendMessage(chatId, entry.error);
+  if (!entry && !isSlipOcrConfigured()) return sendMessage(chatId, NO_AMOUNT_HINT);
   if (image.fileSize !== null && image.fileSize > MAX_TELEGRAM_IMAGE_BYTES) {
     return sendMessage(chatId, "รูปใหญ่เกิน 10 MB");
   }
@@ -169,7 +205,23 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
   const contentType = detectImageType(bytes);
   if (!contentType) return sendMessage(chatId, "รองรับเฉพาะรูป JPEG, PNG หรือ WebP");
 
-  const driveName = slipDriveFileName(appDateString(), appTimeString(), contentType);
+  let expenseData: NewExpense;
+  if (entry) {
+    expenseData = fromEntry(entry.expense, today);
+  } else {
+    const reading = await readSlip(bytes, contentType, today);
+    if (!reading) return sendMessage(chatId, `อ่านยอดเงินจากสลิปไม่ได้ ${NO_AMOUNT_HINT}`);
+    const date = reading.date ?? today;
+    expenseData = {
+      amount: reading.amount,
+      date,
+      paidTime: reading.time ?? (date === today ? appTimeString() : null),
+      payee: reading.payee,
+      note: text.trim().slice(0, 200) || null,
+    };
+  }
+
+  const driveName = slipDriveFileName(expenseData.date, expenseData.paidTime ?? appTimeString(), contentType);
   let driveFileId: string;
   try {
     driveFileId = await uploadSlip(bytes, driveName, contentType);
@@ -182,7 +234,7 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
 
   let expense: { id: string };
   try {
-    expense = await createExpense(parsed, {
+    expense = await createExpense(expenseData, {
       driveFileId,
       fileName: image.fileName ? sanitizeFileName(image.fileName) : driveName,
       contentType,
@@ -192,7 +244,7 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
     await trashSlip(driveFileId).catch(() => undefined);
     throw error;
   }
-  await sendSaved(chatId, expense.id, parsed, true);
+  await sendSaved(chatId, expense.id, expenseData, today, { withImage: true, fromOcr: !entry });
 }
 
 async function handleCallback(callback: TgCallbackQuery, chatId: number) {

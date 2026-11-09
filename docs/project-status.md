@@ -1,6 +1,6 @@
 # Project status
 
-Handoff for any agent or person picking this up. Last updated 2026-11-08.
+Handoff for any agent or person picking this up. Last updated 2026-11-09.
 
 ## Where things run
 
@@ -13,12 +13,16 @@ Handoff for any agent or person picking this up. Last updated 2026-11-08.
 
 - Subscriptions, billing cycles, optional charge time, reminders (email).
 - Tasks and work shifts in `/schedule`; shifts repeat on chosen weekdays between dates and show in the Dashboard calendar.
-- Expense slips in `/slips`; the image is optional, and `ExpenseSlip.source` is `WEB` or `TELEGRAM`.
+- Expense slips in `/slips`; `ExpenseSlip.source` is `WEB` or `TELEGRAM`. The image is optional on the web form too, since 2026-11-09 (before that the schema allowed it but the form and `createSlip` still required one). Without a Drive connection the form still saves, without the image field.
 - UI pass: IBM Plex Sans Thai, Phosphor icons, phone bottom navigation.
 - Telegram bot: `ข้าว 60` style entries with category buttons, slip photos with the amount in the caption or a reply, `/today`, `/month`, and `/undo`, which lists up to 8 bot entries from 7 days and confirms before deleting. Code is in `src/lib/telegram*.ts` and the webhook route.
+- Backdated bot entries (not yet committed or deployed, 2026-11-09): a leading date such as `8/11/2569 อาหาร 50`, `8/11 ข้าว 60` (this year, or last year if that date is still ahead), or `เมื่อวาน กาแฟ 45`. Buddhist and Christian years both work; future and impossible dates are refused. Backdated entries are saved without a time. Photo captions accept the same format. Parsing is `parseEntry` in `src/lib/telegram-parse.ts`.
+- Slip reading with Gemini (not yet committed or deployed, 2026-11-09): `src/lib/slip-ocr.ts` calls the Gemini REST API with `GEMINI_API_KEY` and an optional `GEMINI_MODEL` (default `gemini-flash-lite-latest`; full Flash took over 75 s per slip on 2026-11-09). The bot reads a photo only when its caption or reply has no amount, then saves the amount, date, time, and payee and says "อ่านจากสลิป"; a caption amount always wins. On the web, choosing an image fills the form for the owner to check. Without the key both fall back to manual entry. The key is in the local `.env` (2026-11-09) and a generated test slip read correctly through `readSlip`; it is not yet in Vercel.
 - Subscription reminders through Telegram (deployed 2026-11-08): the daily cron sends each 7/3/1-day reminder to the owner's chat with a "จ่ายแล้ว" button. The button pays only the cycle the reminder was for, so a repeat or late tap reports "รอบนี้บันทึกการจ่ายไปแล้ว". The web "mark paid" action and the bot share `src/lib/subscription-payment.ts`. Delivery is tracked in `Reminder.telegramAttemptedAt/SentAt/ErrorCode` and shown on the "ประวัติและระบบ" page.
 
 ## Not yet confirmed
+
+- Gemini slip reading: needs `GEMINI_API_KEY` in Vercel, then one real bank slip through the bot and the web form.
 
 - Telegram reminders: deployed, but no reminder has been sent yet. Check the first one and the "จ่ายแล้ว" tap.
 
@@ -36,7 +40,6 @@ Features:
 - Editing an amount from the bot.
 - A nightly summary; check Vercel Hobby cron limits first.
 - Monthly budgets per category.
-- OCR for slips, marked `TODO(slip-ocr)`.
 - Editing repeated shifts as a series.
 
 ## Decisions from the owner

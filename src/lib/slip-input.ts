@@ -87,7 +87,7 @@ export type SlipFormInput = {
   subscriptionId: string | null;
 };
 
-// TODO(slip-ocr): pre-fill these fields by reading the slip image. Deferred by the user; entry is manual for now.
+// Slip reading (src/lib/slip-ocr.ts) pre-fills the form on the client; this still validates whatever is submitted.
 export function parseSlipForm(formData: FormData): SlipFormInput {
   const amountRaw = String(formData.get("amount") ?? "").trim();
   // Number() alone would accept forms such as 0x10 and 1e-3.

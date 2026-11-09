@@ -11,6 +11,7 @@ vi.mock("@/lib/telegram", () => ({
   getFilePath: vi.fn(),
   sendMessage: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("@/lib/slip-ocr", () => ({ isSlipOcrConfigured: vi.fn().mockReturnValue(false), readSlip: vi.fn() }));
 vi.mock("@/lib/subscription-payment", () => ({ recordSubscriptionPayment: vi.fn() }));
 vi.mock("@/lib/google-drive", () => ({
   DriveAuthError: class DriveAuthError extends Error {},
@@ -21,6 +22,7 @@ vi.mock("@/lib/google-drive", () => ({
 
 import { trashSlip, uploadSlip } from "@/lib/google-drive";
 import { getPrisma } from "@/lib/prisma";
+import { isSlipOcrConfigured, readSlip } from "@/lib/slip-ocr";
 import { recordSubscriptionPayment } from "@/lib/subscription-payment";
 import { answerCallbackQuery, downloadFile, editMessageText, getFilePath, sendMessage } from "@/lib/telegram";
 import { handleTelegramUpdate } from "@/lib/telegram-bot";
@@ -51,6 +53,7 @@ beforeEach(() => {
   vi.mocked(getPrisma).mockReturnValue(db as never);
   db.telegramUpdate.create.mockResolvedValue({});
   db.expenseSlip.create.mockResolvedValue({ id: EXPENSE_ID });
+  vi.mocked(isSlipOcrConfigured).mockReturnValue(false);
 });
 
 describe("handleTelegramUpdate", () => {
@@ -90,6 +93,31 @@ describe("handleTelegramUpdate", () => {
       "บันทึก 60.00 บาท · ข้าว",
       expect.objectContaining({ inline_keyboard: expect.any(Array) }),
     );
+  });
+
+  it("records a backdated entry without a time", async () => {
+    await handleTelegramUpdate(textUpdate("1/1/2569 อาหาร 50"), config);
+    expect(db.expenseSlip.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          amount: 50,
+          note: "อาหาร",
+          paidDate: new Date("2026-01-01T00:00:00.000Z"),
+          paidTime: null,
+        }),
+      }),
+    );
+    expect(sendMessage).toHaveBeenCalledWith(
+      OWNER,
+      expect.stringMatching(/^บันทึก 50\.00 บาท · อาหาร · วันที่ /),
+      expect.objectContaining({ inline_keyboard: expect.any(Array) }),
+    );
+  });
+
+  it("explains a date it cannot use and saves nothing", async () => {
+    await handleTelegramUpdate(textUpdate("31/2/2569 ข้าว 60"), config);
+    expect(db.expenseSlip.create).not.toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledWith(OWNER, "ไม่มีวันที่ 31/2/2569 ในปฏิทิน");
   });
 
   it("answers unreadable text with a hint and saves nothing", async () => {
@@ -222,6 +250,56 @@ describe("handleTelegramUpdate", () => {
       expect.objectContaining({ data: expect.objectContaining({ amount: 350, driveFileId: "drive-2", contentType: "image/jpeg" }) }),
     );
     expect(sendMessage).toHaveBeenCalledWith(OWNER, "บันทึก 350.00 บาท · ค่าไฟ · มีรูปสลิป", expect.anything());
+  });
+
+  function bareSlip(updateId: number, caption?: string) {
+    vi.mocked(isSlipOcrConfigured).mockReturnValue(true);
+    vi.mocked(getFilePath).mockResolvedValue("photos/file.jpg");
+    vi.mocked(downloadFile).mockResolvedValue(new Uint8Array([0xff, 0xd8, 0xff, 0x00]));
+    vi.mocked(uploadSlip).mockResolvedValue("drive-4");
+    return {
+      update_id: updateId,
+      message: { message_id: 15, chat: { id: OWNER, type: "private" }, caption, photo: [{ file_id: "p", width: 10, height: 10 }] },
+    };
+  }
+
+  it("reads a photo without an amount and saves what the slip says", async () => {
+    vi.mocked(readSlip).mockResolvedValue({ amount: 245.5, date: "2026-01-02", time: "14:05", payee: "ร้านข้าวแกง" });
+    await handleTelegramUpdate(bareSlip(7, "มื้อเที่ยง"), config);
+    expect(db.expenseSlip.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          amount: 245.5,
+          paidDate: new Date("2026-01-02T00:00:00.000Z"),
+          paidTime: "14:05",
+          payee: "ร้านข้าวแกง",
+          note: "มื้อเที่ยง",
+          driveFileId: "drive-4",
+        }),
+      }),
+    );
+    expect(uploadSlip).toHaveBeenCalledWith(expect.any(Uint8Array), "02-01-2026_14-05.jpg", "image/jpeg");
+    expect(sendMessage).toHaveBeenCalledWith(
+      OWNER,
+      expect.stringMatching(/^อ่านจากสลิป .*\/undo\nบันทึก 245\.50 บาท · ร้านข้าวแกง · มื้อเที่ยง · วันที่ .* · 14:05 น\. · มีรูปสลิป$/),
+      expect.anything(),
+    );
+  });
+
+  it("does not read the slip when the caption has an amount", async () => {
+    await handleTelegramUpdate(bareSlip(8, "60 ข้าว"), config);
+    expect(readSlip).not.toHaveBeenCalled();
+    expect(db.expenseSlip.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ amount: 60, note: "ข้าว" }) }),
+    );
+  });
+
+  it("asks for the amount when the slip cannot be read, without uploading", async () => {
+    vi.mocked(readSlip).mockResolvedValue(null);
+    await handleTelegramUpdate(bareSlip(9), config);
+    expect(uploadSlip).not.toHaveBeenCalled();
+    expect(db.expenseSlip.create).not.toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledWith(OWNER, expect.stringContaining("อ่านยอดเงินจากสลิปไม่ได้"));
   });
 
   it("trashes the uploaded image when saving the expense fails", async () => {

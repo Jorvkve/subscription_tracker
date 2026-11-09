@@ -11,6 +11,7 @@ import {
   formatDaySummary,
   formatMonthSummary,
   parseCommand,
+  parseEntry,
   parseExpenseText,
   pickImage,
 } from "@/lib/telegram-parse";
@@ -42,6 +43,54 @@ describe("parseExpenseText", () => {
 
   it("cuts a long note to 200 characters", () => {
     expect(parseExpenseText(`${"ก".repeat(250)} 60`)?.note).toHaveLength(200);
+  });
+});
+
+describe("parseEntry", () => {
+  const today = "2026-11-09";
+
+  it("uses today when there is no date", () => {
+    expect(parseEntry("ข้าว 60", today)).toEqual({ ok: true, expense: { amount: 60, note: "ข้าว", date: today } });
+  });
+
+  it.each([
+    ["8/11/2569 อาหาร 50", "2026-11-08", 50, "อาหาร"],
+    ["8/11/2026 อาหาร 50", "2026-11-08", 50, "อาหาร"],
+    ["8/11/69 อาหาร 50", "2026-11-08", 50, "อาหาร"],
+    ["8/11/26 อาหาร 50", "2026-11-08", 50, "อาหาร"],
+    ["8-11-2569 50 อาหาร", "2026-11-08", 50, "อาหาร"],
+    ["๘/๑๑/๒๕๖๙ อาหาร ๕๐", "2026-11-08", 50, "อาหาร"],
+    ["1/11 ข้าว 60", "2026-11-01", 60, "ข้าว"],
+    ["30/12 ของขวัญ 500", "2025-12-30", 500, "ของขวัญ"],
+    ["8/11 120", "2026-11-08", 120, null],
+    ["เมื่อวาน กาแฟ 45", "2026-11-08", 45, "กาแฟ"],
+    ["9/11/2569 ข้าว 60", "2026-11-09", 60, "ข้าว"],
+  ])("reads %s", (text, date, amount, note) => {
+    expect(parseEntry(text, today)).toEqual({ ok: true, expense: { amount, note, date } });
+  });
+
+  it("keeps a decimal amount at the start as an amount", () => {
+    expect(parseEntry("12.5 ข้าว", today)).toEqual({ ok: true, expense: { amount: 12.5, note: "ข้าว", date: today } });
+  });
+
+  it("goes back across a new year for yesterday", () => {
+    expect(parseEntry("เมื่อวาน ข้าว 60", "2026-01-01")).toMatchObject({ ok: true, expense: { date: "2025-12-31" } });
+  });
+
+  it.each([
+    ["31/2/2569 ข้าว 60", "ไม่มีวันที่"],
+    ["10/11/2569 ข้าว 60", "อนาคต"],
+    ["1/1/1990 ข้าว 60", "เก่าเกินไป"],
+    ["8/11/2569 ข้าว", "ใส่ยอดเงิน"],
+  ])("explains why %s cannot be used", (text, error) => {
+    const result = parseEntry(text, today);
+    expect(result).toMatchObject({ ok: false });
+    expect(result && !result.ok && result.error).toContain(error);
+  });
+
+  it("returns null for text that is not an entry", () => {
+    expect(parseEntry("สวัสดี", today)).toBeNull();
+    expect(parseEntry("/today", today)).toBeNull();
   });
 });
 
