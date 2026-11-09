@@ -8,6 +8,11 @@ function baht(amount: number): string {
 
 const levelNote = { ok: "", warn: "ใกล้เต็มงบ", over: "เกินงบ" } as const;
 
+/** Fixed costs such as rent are paid in full, which is on plan rather than a warning. */
+function isExactlyUsed(line: BudgetLine): boolean {
+  return Math.round(line.spent * 100) === Math.round(line.budget * 100);
+}
+
 /** Monthly budgets per category, with a fold-out form to set them. */
 export function BudgetPanel({
   lines,
@@ -31,12 +36,15 @@ export function BudgetPanel({
         <p className="empty-note">ยังไม่ได้ตั้งงบ กด &quot;ตั้งงบ&quot; ด้านล่างเพื่อเริ่ม</p>
       ) : (
         <ul className="budget-list">
-          {lines.map((line) => (
-            <li className={`budget-row budget-${line.level}`} key={line.key}>
+          {lines.map((line) => {
+            const exact = isExactlyUsed(line);
+            const note = exact ? "ครบงบ" : levelNote[line.level];
+            return (
+            <li className={`budget-row budget-${exact ? "exact" : line.level}`} key={line.key}>
               <div className="budget-row-head">
                 <span>{categoryEmoji(line.key)} {line.label}</span>
                 <span className="budget-figures">
-                  {levelNote[line.level] && <b>{levelNote[line.level]} · </b>}
+                  {note && <b>{note} · </b>}
                   ฿{baht(line.spent)} / ฿{baht(line.budget)}
                 </span>
               </div>
@@ -56,7 +64,8 @@ export function BudgetPanel({
                   : `เหลือ ฿${baht(line.budget - line.spent)} (${Math.round(line.share * 100)}%)`}
               </small>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 

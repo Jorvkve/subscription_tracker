@@ -65,6 +65,9 @@ function baht(amount: number): string {
 
 export function budgetAlertText(label: string, spent: number, budget: number, level: "warn" | "over"): string {
   const percent = Math.round((spent / budget) * 100);
+  if (Math.round(spent * 100) === Math.round(budget * 100)) {
+    return `✅ ${label}ครบงบพอดี ${baht(spent)} บาท`;
+  }
   if (level === "over") {
     return `⚠️ เกินงบ${label}แล้ว ใช้ไป ${baht(spent)} จากงบ ${baht(budget)} บาท (${percent}%)`;
   }

@@ -56,6 +56,7 @@ describe("budget levels", () => {
   it("words warnings in Thai", () => {
     expect(budgetAlertText("อาหาร", 2500, 3000, "warn")).toContain("ใช้ไป 83%");
     expect(budgetAlertText("อาหาร", 3200, 3000, "over")).toContain("เกินงบอาหารแล้ว");
+    expect(budgetAlertText("ค่าห้อง", 5500, 5500, "warn")).toBe("✅ ค่าห้องครบงบพอดี 5,500 บาท");
   });
 });
 

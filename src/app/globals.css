@@ -344,3 +344,4 @@ input[type="file"]::file-selector-button:hover{border-color:var(--lime);backgrou
 .confirm-delete-scopes form{display:contents}
 .page-header .header-actions:has(.confirm-delete-scopes){flex-basis:100%;max-width:100%}
 .page-header:has(.confirm-delete-scopes){flex-wrap:wrap}
+.budget-exact .budget-figures b{color:var(--lime)}
