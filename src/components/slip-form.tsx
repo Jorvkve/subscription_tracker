@@ -17,6 +17,10 @@ type SlipFormValues = {
   subscriptionId?: string | null;
 };
 
+type SlipReading = { amount: number; date: string | null; time: string | null; payee: string | null };
+type ReadAction = (formData: FormData) => Promise<{ reading?: SlipReading; error?: string }>;
+type ReadStatus = { kind: "reading" | "done" | "failed"; message: string } | null;
+
 type Subscription = {
   id: string;
   name: string;
@@ -27,18 +31,56 @@ export function SlipForm({
   values,
   subscriptions,
   showFileField = true,
+  readAction,
 }: {
   action: (state: FormActionState, formData: FormData) => Promise<FormActionState>;
   values?: SlipFormValues;
   subscriptions: Subscription[];
   showFileField?: boolean;
+  /** When set, choosing an image reads it and fills in the fields. */
+  readAction?: ReadAction;
 }) {
   const [state, formAction, isPending] = useActionState(action, {});
   const [fileError, setFileError] = useState<string | null>(null);
+  const [readStatus, setReadStatus] = useState<ReadStatus>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const readRequest = useRef(0);
+
+  function fillField(name: string, value: string | number | null) {
+    const field = formRef.current?.elements.namedItem(name);
+    if (value !== null && field instanceof HTMLInputElement) field.value = String(value);
+  }
+
+  async function readSlip(file: File) {
+    if (!readAction) return;
+    const request = ++readRequest.current;
+    setReadStatus({ kind: "reading", message: "กำลังอ่านสลิป…" });
+    const data = new FormData();
+    data.set("slipFile", file);
+    let result: Awaited<ReturnType<ReadAction>>;
+    try {
+      result = await readAction(data);
+    } catch {
+      result = { error: "อ่านสลิปไม่ได้ กรุณากรอกเอง" };
+    }
+    // A newer image was chosen while this one was being read.
+    if (request !== readRequest.current) return;
+    if (!result.reading) {
+      setReadStatus({ kind: "failed", message: result.error ?? "อ่านสลิปไม่ได้ กรุณากรอกเอง" });
+      return;
+    }
+    fillField("amount", result.reading.amount.toFixed(2));
+    fillField("paidDate", result.reading.date);
+    fillField("paidTime", result.reading.time);
+    fillField("payee", result.reading.payee);
+    setReadStatus({ kind: "done", message: "กรอกจากสลิปแล้ว ตรวจสอบก่อนบันทึก" });
+  }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    readRequest.current += 1;
+    setReadStatus(null);
     if (!file) {
       setFileError(null);
       return;
@@ -48,11 +90,12 @@ export function SlipForm({
       if (fileRef.current) fileRef.current.value = "";
     } else {
       setFileError(null);
+      void readSlip(file);
     }
   }
 
   return (
-    <form action={formAction} className="form-card">
+    <form ref={formRef} action={formAction} className="form-card">
       {state.error && (
         <p className="form-error" role="alert">
           {state.error}
@@ -61,19 +104,25 @@ export function SlipForm({
       <div className="form-grid">
         {showFileField && (
           <label className="field field-wide">
-            รูปสลิปการชำระเงิน
+            รูปสลิปการชำระเงิน (ไม่บังคับ)
             <input
               ref={fileRef}
               name="slipFile"
               type="file"
               accept="image/jpeg,image/png,image/webp"
-              required={showFileField}
               onChange={handleFileChange}
             />
             {fileError && (
               <small className="text-danger">{fileError}</small>
             )}
-            <small>รองรับ JPEG, PNG, WebP ขนาดไม่เกิน 4 MB</small>
+            {readStatus && (
+              <small className={readStatus.kind === "failed" ? "text-warning" : undefined} role="status">
+                {readStatus.message}
+              </small>
+            )}
+            <small>
+              รองรับ JPEG, PNG, WebP ขนาดไม่เกิน 4 MB{readAction ? " เลือกรูปแล้วระบบจะอ่านยอดเงินให้" : ""}
+            </small>
           </label>
         )}
         <label className="field">
@@ -170,7 +219,7 @@ export function SlipForm({
         <button
           className="button button-primary"
           type="submit"
-          disabled={isPending || fileError !== null}
+          disabled={isPending || fileError !== null || readStatus?.kind === "reading"}
         >
           {isPending ? "กำลังบันทึก…" : "บันทึกสลิป"}
         </button>

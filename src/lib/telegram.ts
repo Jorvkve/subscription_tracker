@@ -28,8 +28,20 @@ async function callApi<T>(method: string, body: Record<string, unknown>): Promis
   return data.result as T;
 }
 
-export async function sendMessage(chatId: number, text: string, replyMarkup?: InlineKeyboard): Promise<void> {
-  await callApi("sendMessage", { chat_id: chatId, text, reply_markup: replyMarkup });
+export async function sendMessage(
+  chatId: number,
+  text: string,
+  replyMarkup?: InlineKeyboard,
+  replyToMessageId?: number,
+): Promise<void> {
+  await callApi("sendMessage", {
+    chat_id: chatId,
+    text,
+    reply_markup: replyMarkup,
+    ...(replyToMessageId === undefined
+      ? {}
+      : { reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true } }),
+  });
 }
 
 export async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {

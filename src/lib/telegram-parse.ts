@@ -62,6 +62,78 @@ export function parseExpenseText(input: string): ParsedExpense | null {
   return null;
 }
 
+export type DatedExpense = ParsedExpense & { date: string };
+export type EntryResult = { ok: true; expense: DatedExpense } | { ok: false; error: string };
+
+// A leading date: 8/11, 8/11/69, 8/11/2569 or 8-11-2026. Dots are left out so 12.5 stays an amount.
+const LEADING_DATE = /^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}|\d{2}))?(?=\s|$)\s*([\s\S]*)$/;
+const YESTERDAY = /^เมื่อวาน(?:นี้)?(?=\s|$|\d)\s*([\s\S]*)$/;
+
+function isoDate(year: number, month: number, day: number): string | null {
+  const value = new Date(Date.UTC(year, month - 1, day));
+  if (value.getUTCFullYear() !== year || value.getUTCMonth() !== month - 1 || value.getUTCDate() !== day) return null;
+  return value.toISOString().slice(0, 10);
+}
+
+/** A 4-digit year above 2400 is Buddhist Era. A 2-digit year takes whichever reading is nearer to now. */
+function toYear(text: string, currentYear: number): number {
+  const value = Number(text);
+  if (text.length === 4) return value > 2400 ? value - 543 : value;
+  const christian = 2000 + value;
+  const buddhist = 2500 + value - 543;
+  return Math.abs(christian - currentYear) <= Math.abs(buddhist - currentYear) ? christian : buddhist;
+}
+
+function shiftYear(date: string, years: number): string | null {
+  const [year, month, day] = date.split("-").map(Number);
+  return isoDate(year + years, month, day);
+}
+
+/**
+ * Reads an entry with an optional date in front: `8/11/2569 อาหาร 50`, `8/11 ข้าว 60`,
+ * `เมื่อวาน ข้าว 60`. Without a date the entry is for `today`. Returns null when the text
+ * is not an entry at all, and an error when the date cannot be used.
+ */
+export function parseEntry(input: string, today: string): EntryResult | null {
+  const text = normalizeThaiDigits(input).trim();
+  let date = today;
+  let rest = text;
+
+  const yesterday = YESTERDAY.exec(text);
+  const dated = yesterday ? null : LEADING_DATE.exec(text);
+  if (yesterday) {
+    const [year, month, day] = today.split("-").map(Number);
+    date = new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
+    rest = yesterday[1];
+  } else if (dated) {
+    const currentYear = Number(today.slice(0, 4));
+    const day = Number(dated[1]);
+    const month = Number(dated[2]);
+    const explicitYear = dated[3] !== undefined;
+    let parsed = isoDate(explicitYear ? toYear(dated[3], currentYear) : currentYear, month, day);
+    // Without a year, a date later than today means last year (30/12 typed on 2 January).
+    if (parsed && !explicitYear && parsed > today) parsed = shiftYear(parsed, -1);
+    if (!parsed) return { ok: false, error: `ไม่มีวันที่ ${dated[1]}/${dated[2]}${explicitYear ? `/${dated[3]}` : ""} ในปฏิทิน` };
+    if (parsed > today) return { ok: false, error: "วันที่อยู่ในอนาคต บันทึกได้เฉพาะวันนี้หรือย้อนหลัง" };
+    if (parsed < "2000-01-01") return { ok: false, error: "วันที่เก่าเกินไป" };
+    date = parsed;
+    rest = dated[4];
+  }
+
+  const parsed = parseExpenseText(rest);
+  if (!parsed) {
+    return rest === text ? null : { ok: false, error: "ใส่ยอดเงินหลังวันที่ด้วย เช่น 8/11/2569 ข้าว 60" };
+  }
+  return { ok: true, expense: { ...parsed, date } };
+}
+
+/** The button under a failed photo; the photo itself is the message it replies to. */
+export const RETRY_IMAGE_CALLBACK = "img:retry";
+
+export function buildRetryImageKeyboard(): InlineKeyboard {
+  return { inline_keyboard: [[{ text: "ลองใหม่", callback_data: RETRY_IMAGE_CALLBACK }]] };
+}
+
 export type BotCommand = "start" | "help" | "today" | "month" | "undo";
 
 export function parseCommand(text: string): BotCommand | null {
@@ -230,6 +302,11 @@ export const HELP_TEXT = [
   "• ข้าว 60",
   "• 45 กาแฟ",
   "• ส่งรูปสลิปพร้อมคำบรรยาย เช่น 350 ค่าไฟ",
+  "",
+  "บันทึกย้อนหลัง ใส่วันที่ไว้ข้างหน้า เช่น",
+  "• 8/11/2569 อาหาร 50",
+  "• 8/11 ข้าว 60 (ปีนี้)",
+  "• เมื่อวาน กาแฟ 45",
   "",
   "คำสั่ง",
   "/today ดูรายการวันนี้",

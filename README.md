@@ -28,6 +28,7 @@ Google login requires a verified email listed in `ALLOWED_GOOGLE_EMAILS` as a co
 - The Dashboard calendar shows current due dates, overdue items, projected future cycles, and paid billing dates. Selecting a day displays subscription details.
 - Scheduled job runs and sanitized error messages are retained in `JobExecution`.
 - A subscription can store an optional charge time (`HH:mm`), shown on its detail page and in the calendar.
+- Expense entries may have no slip image, and any past date can be entered. With `GEMINI_API_KEY` set, a slip image is read with the Gemini API to fill in the amount, date, time, and payee; the image is sent to Google for this. Without the key, entry is manual.
 
 ## Work schedule
 
@@ -68,7 +69,9 @@ Record daily expenses from a private chat with your own bot. Entries land in the
 Usage:
 
 - `ข้าว 60`, `60 กาแฟ`, `ค่าเช่า 1,200`, `฿45.50`: the amount may come first or last, and Thai digits work. The bot saves it for today and offers category buttons.
-- A slip photo with a caption such as `350 ค่าไฟ`, or a reply to an earlier photo with the amount: the image is stored in Drive like web uploads, so Google Drive must be connected on `/slips`.
+- A date in front records a past day: `8/11/2569 อาหาร 50`, `8/11/26 ข้าว 60`, `8/11 ข้าว 60` (this year, or last year if that day is still ahead), `เมื่อวาน กาแฟ 45`. Buddhist and Christian years both work. Future and impossible dates are refused. Past entries have no time.
+- A slip photo with a caption such as `350 ค่าไฟ` (or `8/11 350 ค่าไฟ`), or a reply to an earlier photo with the amount: the image is stored in Drive like web uploads, so Google Drive must be connected on `/slips`.
+- A slip photo with no amount: when `GEMINI_API_KEY` is set, the bot reads the amount, date, time, and payee from the slip and saves them, saying "อ่านจากสลิป" so a wrong reading can be removed with `/undo`. A caption amount always wins over the reading.
 - `/today`, `/month` (expenses by category, plus subscription payments), `/undo` (lists up to 8 bot entries from the last 7 days as buttons; picking one asks for confirmation, then deletes it and moves its image to Drive trash), `/help`.
 
 Each update id is recorded in `TelegramUpdate`, so Telegram retries never create duplicates.

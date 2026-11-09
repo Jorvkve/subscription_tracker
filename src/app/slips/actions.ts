@@ -13,6 +13,7 @@ import {
 } from "@/lib/google-drive";
 import { appDateString, appTimeString, utcDate } from "@/lib/dates";
 import { EXPENSE_CATEGORIES } from "@/lib/expense-categories";
+import { isSlipOcrConfigured, readSlip, type SlipReading } from "@/lib/slip-ocr";
 import type { FormActionState } from "@/app/actions";
 
 function driveErrorMessage(error: unknown): string {
@@ -40,19 +41,23 @@ export async function createSlip(
   }
 
   const fileRaw = formData.get("slipFile");
-  const file = fileRaw instanceof File ? fileRaw : null;
+  // The image is optional: an empty file input arrives as a File of size 0.
+  const file = fileRaw instanceof File && fileRaw.size > 0 ? fileRaw : null;
 
-  try {
-    validateSlipFile(file);
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "ตรวจสอบไฟล์อีกครั้ง" };
-  }
-
-  // Read bytes and detect type from actual content
-  const bytes = new Uint8Array(await file!.arrayBuffer());
-  const contentType = detectImageType(bytes);
-  if (!contentType) {
-    return { error: "ประเภทไฟล์ไม่รองรับ กรุณาใช้ไฟล์ JPEG, PNG หรือ WebP" };
+  let bytes: Uint8Array | null = null;
+  let contentType: string | null = null;
+  if (file) {
+    try {
+      validateSlipFile(file);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : "ตรวจสอบไฟล์อีกครั้ง" };
+    }
+    // Read bytes and detect type from actual content
+    bytes = new Uint8Array(await file.arrayBuffer());
+    contentType = detectImageType(bytes);
+    if (!contentType) {
+      return { error: "ประเภทไฟล์ไม่รองรับ กรุณาใช้ไฟล์ JPEG, PNG หรือ WebP" };
+    }
   }
 
   // Verify subscription exists if provided
@@ -66,26 +71,27 @@ export async function createSlip(
     }
   }
 
-  // Generate a server-side Drive file name (ignore user's file name for Drive)
-  const driveName = slipDriveFileName(parsed.paidDate, parsed.paidTime, contentType);
-
-  // Keep sanitized original name in fileName
-  const originalName = file!.name ? sanitizeFileName(file!.name) : driveName;
-
-  let driveFileId: string;
-  try {
-    driveFileId = await uploadSlip(bytes, driveName, contentType);
-  } catch (error) {
-    return { error: driveErrorMessage(error) };
+  let image: { driveFileId: string; fileName: string; contentType: string; sizeBytes: number } | null = null;
+  if (file && bytes && contentType) {
+    // Generate a server-side Drive file name (ignore user's file name for Drive)
+    const driveName = slipDriveFileName(parsed.paidDate, parsed.paidTime, contentType);
+    try {
+      image = {
+        driveFileId: await uploadSlip(bytes, driveName, contentType),
+        // Keep sanitized original name in fileName
+        fileName: file.name ? sanitizeFileName(file.name) : driveName,
+        contentType,
+        sizeBytes: bytes.length,
+      };
+    } catch (error) {
+      return { error: driveErrorMessage(error) };
+    }
   }
 
   try {
     await getPrisma().expenseSlip.create({
       data: {
-        driveFileId,
-        fileName: originalName,
-        contentType,
-        sizeBytes: bytes.length,
+        ...image,
         amount: parsed.amount,
         currency: parsed.currency,
         paidDate: utcDate(parsed.paidDate),
@@ -98,11 +104,13 @@ export async function createSlip(
     });
   } catch {
     // Best-effort cleanup: trash the Drive file
-    try {
-      await trashSlip(driveFileId);
-    } catch {
-      // Log only sanitized info, never expose tokens
-      console.error("[createSlip] Failed to trash Drive file after DB error");
+    if (image) {
+      try {
+        await trashSlip(image.driveFileId);
+      } catch {
+        // Log only sanitized info, never expose tokens
+        console.error("[createSlip] Failed to trash Drive file after DB error");
+      }
     }
     return { error: "บันทึกสลิปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" };
   }
@@ -231,4 +239,26 @@ export async function quickAddExpense(formData: FormData): Promise<void> {
   revalidatePath("/");
   revalidatePath("/slips");
   redirect("/slips?quick=saved");
+}
+
+export type SlipReadState = { reading?: SlipReading; error?: string };
+
+/** Reads the chosen image so the form can be pre-filled. Nothing is stored. */
+export async function readSlipImage(formData: FormData): Promise<SlipReadState> {
+  await requireSession();
+  if (!isSlipOcrConfigured()) return { error: "ยังไม่ได้ตั้งค่า GEMINI_API_KEY" };
+
+  const fileRaw = formData.get("slipFile");
+  const file = fileRaw instanceof File && fileRaw.size > 0 ? fileRaw : null;
+  try {
+    validateSlipFile(file);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "ตรวจสอบไฟล์อีกครั้ง" };
+  }
+  const bytes = new Uint8Array(await file!.arrayBuffer());
+  const contentType = detectImageType(bytes);
+  if (!contentType) return { error: "ประเภทไฟล์ไม่รองรับ กรุณาใช้ไฟล์ JPEG, PNG หรือ WebP" };
+
+  const reading = await readSlip(bytes, contentType, appDateString());
+  return reading ? { reading } : { error: "อ่านสลิปไม่ได้ กรุณากรอกเอง" };
 }

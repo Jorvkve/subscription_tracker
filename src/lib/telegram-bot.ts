@@ -1,10 +1,12 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
-import { addDays, appDateString, appTimeString, utcDate } from "@/lib/dates";
+import { addDays, appDateString, appTimeString, formatDate, utcDate } from "@/lib/dates";
 import { categoryLabel } from "@/lib/expense-categories";
 import { DriveAuthError, DriveNotConnectedError, trashSlip, uploadSlip } from "@/lib/google-drive";
 import { getPrisma } from "@/lib/prisma";
 import { detectImageType, slipDriveFileName } from "@/lib/slip-input";
+import { describeError, withRetry } from "@/lib/retry";
+import { isSlipOcrConfigured, readSlip } from "@/lib/slip-ocr";
 import { recordSubscriptionPayment } from "@/lib/subscription-payment";
 import {
   FileTooLargeError,
@@ -18,9 +20,11 @@ import { chatAccess, type TelegramConfig } from "@/lib/telegram-auth";
 import {
   FORMAT_HINT,
   HELP_TEXT,
+  RETRY_IMAGE_CALLBACK,
   buildCategoryKeyboard,
   buildDeleteConfirm,
   buildDeletePicker,
+  buildRetryImageKeyboard,
   decodeCategoryCallback,
   decodeDeleteCallback,
   describeExpense,
@@ -28,12 +32,12 @@ import {
   formatDaySummary,
   formatMonthSummary,
   parseCommand,
-  parseExpenseText,
+  parseEntry,
   pickImage,
   type BotCommand,
   type ImageRef,
   type InlineKeyboard,
-  type ParsedExpense,
+  type DatedExpense,
   type TgCallbackQuery,
   type TgMessage,
   type TgUpdate,
@@ -93,10 +97,34 @@ export async function handleTelegramUpdate(update: unknown, config: TelegramConf
     if (callback) await handleCallback(callback, chat.id);
     else if (message) await handleMessage(message);
   } catch (error) {
-    console.error("[telegram] update failed:", error instanceof Error ? error.name : "unknown");
-    if (callback) await answerCallbackQuery(callback.id, "เกิดข้อผิดพลาด").catch(() => undefined);
-    else await trySend(chat.id, "บันทึกไม่สำเร็จ กรุณาลองใหม่");
+    console.error("[telegram] update failed:", describeError(error));
+    // A photo that failed gets a button that retries it, so it need not be sent again.
+    const photo = failedPhoto(message, callback);
+    if (photo) {
+      await sendMessage(chat.id, FAILED_PHOTO_TEXT, buildRetryImageKeyboard(), photo.message_id).catch(() => undefined);
+    } else if (callback) {
+      await answerCallbackQuery(callback.id, "เกิดข้อผิดพลาด").catch(() => undefined);
+    } else {
+      await trySend(chat.id, "บันทึกไม่สำเร็จ กรุณาลองใหม่");
+    }
   }
+}
+
+const FAILED_PHOTO_TEXT = 'บันทึกรูปนี้ไม่สำเร็จ กด "ลองใหม่" ได้เลยโดยไม่ต้องส่งรูปซ้ำ';
+
+function failedPhoto(message: TgMessage | undefined, callback: TgCallbackQuery | undefined): TgMessage | null {
+  if (message && pickImage(message)) return message;
+  const original = callback?.data === RETRY_IMAGE_CALLBACK ? callback.message?.reply_to_message : undefined;
+  return original && pickImage(original) ? original : null;
+}
+
+/** Only for errors that may pass: a missing Drive connection or an oversized file will not. */
+function isTransient(error: unknown): boolean {
+  return !(
+    error instanceof DriveNotConnectedError ||
+    error instanceof DriveAuthError ||
+    error instanceof FileTooLargeError
+  );
 }
 
 async function handleMessage(message: TgMessage) {
@@ -112,22 +140,37 @@ async function handleMessage(message: TgMessage) {
   const repliedImage = message.reply_to_message ? pickImage(message.reply_to_message) : null;
   if (repliedImage) return handleImage(message, repliedImage, text);
 
-  const parsed = parseExpenseText(text);
-  if (!parsed) return sendMessage(chatId, FORMAT_HINT);
-  const expense = await createExpense(parsed, null);
-  await sendSaved(chatId, expense.id, parsed, false);
+  const today = appDateString();
+  const entry = parseEntry(text, today);
+  if (!entry) return sendMessage(chatId, FORMAT_HINT);
+  if (!entry.ok) return sendMessage(chatId, entry.error);
+  const expenseData = fromEntry(entry.expense, today);
+  const expense = await createExpense(expenseData, null);
+  await sendSaved(chatId, expense.id, expenseData, today, { withImage: false });
+}
+
+/** A backdated entry has no known time of day. */
+function paidTimeFor(expense: DatedExpense, today: string): string | null {
+  return expense.date === today ? appTimeString() : null;
+}
+
+type NewExpense = DatedExpense & { paidTime: string | null; payee: string | null };
+
+function fromEntry(expense: DatedExpense, today: string): NewExpense {
+  return { ...expense, paidTime: paidTimeFor(expense, today), payee: null };
 }
 
 type StoredImage = { driveFileId: string; fileName: string; contentType: string; sizeBytes: number };
 
-async function createExpense(parsed: ParsedExpense, image: StoredImage | null) {
+async function createExpense(entry: NewExpense, image: StoredImage | null) {
   const expense = await getPrisma().expenseSlip.create({
     data: {
-      amount: parsed.amount,
+      amount: entry.amount,
       currency: "THB",
-      paidDate: utcDate(appDateString()),
-      paidTime: appTimeString(),
-      note: parsed.note,
+      paidDate: utcDate(entry.date),
+      paidTime: entry.paidTime,
+      payee: entry.payee,
+      note: entry.note,
       category: DEFAULT_CATEGORY,
       source: "TELEGRAM",
       ...image,
@@ -138,30 +181,55 @@ async function createExpense(parsed: ParsedExpense, image: StoredImage | null) {
   return expense;
 }
 
-async function sendSaved(chatId: number, expenseId: string, parsed: ParsedExpense, withImage: boolean) {
-  const parts = [`บันทึก ${formatBaht(parsed.amount)} บาท`];
-  if (parsed.note) parts.push(parsed.note);
-  if (withImage) parts.push("มีรูปสลิป");
-  await sendMessage(chatId, parts.join(" · "), buildCategoryKeyboard(expenseId));
+async function sendSaved(
+  chatId: number,
+  expenseId: string,
+  entry: NewExpense,
+  today: string,
+  options: { withImage: boolean; fromOcr?: boolean },
+) {
+  const parts = [`บันทึก ${formatBaht(entry.amount)} บาท`];
+  if (entry.payee) parts.push(entry.payee);
+  if (entry.note) parts.push(entry.note);
+  if (entry.date !== today) parts.push(`วันที่ ${formatDate(entry.date)}`);
+  if (options.fromOcr && entry.paidTime) parts.push(`${entry.paidTime} น.`);
+  if (options.withImage) parts.push("มีรูปสลิป");
+  const text = parts.join(" · ");
+  await sendMessage(
+    chatId,
+    options.fromOcr ? `อ่านจากสลิป ถ้าไม่ถูกต้องให้ลบด้วย /undo\n${text}` : text,
+    buildCategoryKeyboard(expenseId),
+  );
 }
 
 function sanitizeFileName(name: string): string {
   return name.replace(/[^\w.\-ก-๙ ]/g, "_").slice(0, 200);
 }
 
+const NO_AMOUNT_HINT = "ใส่ยอดเงินในคำบรรยายรูป หรือตอบกลับ (reply) รูปนี้ด้วยยอดเงิน เช่น 60 ข้าว";
+
+/**
+ * Saves a photo with its expense. An amount in the caption or reply wins; without one,
+ * the slip is read with Gemini when GEMINI_API_KEY is set.
+ */
 async function handleImage(message: TgMessage, image: ImageRef, text: string) {
   const chatId = message.chat.id;
-  const parsed = parseExpenseText(text);
-  if (!parsed) {
-    return sendMessage(chatId, "ใส่ยอดเงินในคำบรรยายรูป หรือตอบกลับ (reply) รูปนี้ด้วยยอดเงิน เช่น 60 ข้าว");
-  }
+  // The retry button needs the photo to be the message it replies to.
+  const photoMessageId = pickImage(message) ? message.message_id : undefined;
+  const today = appDateString();
+  const entry = parseEntry(text, today);
+  if (entry && !entry.ok) return sendMessage(chatId, entry.error);
+  if (!entry && !isSlipOcrConfigured()) return sendMessage(chatId, NO_AMOUNT_HINT);
   if (image.fileSize !== null && image.fileSize > MAX_TELEGRAM_IMAGE_BYTES) {
     return sendMessage(chatId, "รูปใหญ่เกิน 10 MB");
   }
 
   let bytes: Uint8Array;
   try {
-    bytes = await downloadFile(await getFilePath(image.fileId), MAX_TELEGRAM_IMAGE_BYTES);
+    bytes = await withRetry(
+      async () => downloadFile(await getFilePath(image.fileId), MAX_TELEGRAM_IMAGE_BYTES),
+      { shouldRetry: isTransient },
+    );
   } catch (error) {
     if (error instanceof FileTooLargeError) return sendMessage(chatId, "รูปใหญ่เกิน 10 MB");
     throw error;
@@ -169,10 +237,33 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
   const contentType = detectImageType(bytes);
   if (!contentType) return sendMessage(chatId, "รองรับเฉพาะรูป JPEG, PNG หรือ WebP");
 
-  const driveName = slipDriveFileName(appDateString(), appTimeString(), contentType);
+  let expenseData: NewExpense;
+  if (entry) {
+    expenseData = fromEntry(entry.expense, today);
+  } else {
+    const reading = await readSlip(bytes, contentType, today);
+    if (!reading) {
+      return sendMessage(
+        chatId,
+        `อ่านยอดเงินจากสลิปไม่ได้ กด "ลองใหม่" หรือ${NO_AMOUNT_HINT}`,
+        photoMessageId === undefined ? undefined : buildRetryImageKeyboard(),
+        photoMessageId,
+      );
+    }
+    const date = reading.date ?? today;
+    expenseData = {
+      amount: reading.amount,
+      date,
+      paidTime: reading.time ?? (date === today ? appTimeString() : null),
+      payee: reading.payee,
+      note: text.trim().slice(0, 200) || null,
+    };
+  }
+
+  const driveName = slipDriveFileName(expenseData.date, expenseData.paidTime ?? appTimeString(), contentType);
   let driveFileId: string;
   try {
-    driveFileId = await uploadSlip(bytes, driveName, contentType);
+    driveFileId = await withRetry(() => uploadSlip(bytes, driveName, contentType), { shouldRetry: isTransient });
   } catch (error) {
     if (error instanceof DriveNotConnectedError || error instanceof DriveAuthError) {
       return sendMessage(chatId, `${error.message} ที่หน้าสลิปค่าใช้จ่ายบนเว็บ`);
@@ -182,20 +273,23 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
 
   let expense: { id: string };
   try {
-    expense = await createExpense(parsed, {
+    const stored = {
       driveFileId,
       fileName: image.fileName ? sanitizeFileName(image.fileName) : driveName,
       contentType,
       sizeBytes: bytes.length,
-    });
+    };
+    expense = await withRetry(() => createExpense(expenseData, stored));
   } catch (error) {
     await trashSlip(driveFileId).catch(() => undefined);
     throw error;
   }
-  await sendSaved(chatId, expense.id, parsed, true);
+  await sendSaved(chatId, expense.id, expenseData, today, { withImage: true, fromOcr: !entry });
 }
 
 async function handleCallback(callback: TgCallbackQuery, chatId: number) {
+  if (callback.data === RETRY_IMAGE_CALLBACK) return handleRetryImage(callback, chatId);
+
   const paid = decodePaidCallback(callback.data ?? "");
   if (paid) return handlePaidCallback(callback, chatId, paid);
 
@@ -220,6 +314,27 @@ async function handleCallback(callback: TgCallbackQuery, chatId: number) {
       inline_keyboard: [],
     }).catch(() => undefined);
   }
+}
+
+/** Runs a failed photo again from the message the failure notice replied to. */
+async function handleRetryImage(callback: TgCallbackQuery, chatId: number) {
+  const notice = callback.message;
+  const photo = notice?.reply_to_message;
+  const image = photo ? pickImage(photo) : null;
+  if (!notice || !photo || !image) {
+    return answerCallbackQuery(callback.id, "ไม่พบรูปเดิม กรุณาส่งรูปใหม่");
+  }
+  // Remove the button first so a second tap does not save the slip twice.
+  await editMessageText(chatId, notice.message_id, "กำลังลองใหม่…", { inline_keyboard: [] }).catch(() => undefined);
+  await answerCallbackQuery(callback.id, "กำลังลองใหม่").catch(() => undefined);
+  try {
+    await handleImage(photo, image, photo.caption ?? "");
+  } catch (error) {
+    // The update handler replies to the photo again with a fresh button.
+    await editMessageText(chatId, notice.message_id, "ลองใหม่ยังไม่สำเร็จ", { inline_keyboard: [] }).catch(() => undefined);
+    throw error;
+  }
+  await editMessageText(chatId, notice.message_id, "ลองใหม่แล้ว ดูผลด้านล่าง", { inline_keyboard: [] }).catch(() => undefined);
 }
 
 const PAID_NOTES = {

@@ -11,6 +11,16 @@ vi.mock("@/lib/telegram", () => ({
   getFilePath: vi.fn(),
   sendMessage: vi.fn().mockResolvedValue(undefined),
 }));
+// Real retries, without the waits.
+vi.mock("@/lib/retry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/retry")>();
+  return {
+    ...actual,
+    withRetry: <T,>(task: () => Promise<T>, options: Parameters<typeof actual.withRetry>[1] = {}) =>
+      actual.withRetry(task, { ...options, delaysMs: (options.delaysMs ?? [1, 1]).map(() => 0) }),
+  };
+});
+vi.mock("@/lib/slip-ocr", () => ({ isSlipOcrConfigured: vi.fn().mockReturnValue(false), readSlip: vi.fn() }));
 vi.mock("@/lib/subscription-payment", () => ({ recordSubscriptionPayment: vi.fn() }));
 vi.mock("@/lib/google-drive", () => ({
   DriveAuthError: class DriveAuthError extends Error {},
@@ -19,8 +29,9 @@ vi.mock("@/lib/google-drive", () => ({
   uploadSlip: vi.fn(),
 }));
 
-import { trashSlip, uploadSlip } from "@/lib/google-drive";
+import { DriveNotConnectedError, trashSlip, uploadSlip } from "@/lib/google-drive";
 import { getPrisma } from "@/lib/prisma";
+import { isSlipOcrConfigured, readSlip } from "@/lib/slip-ocr";
 import { recordSubscriptionPayment } from "@/lib/subscription-payment";
 import { answerCallbackQuery, downloadFile, editMessageText, getFilePath, sendMessage } from "@/lib/telegram";
 import { handleTelegramUpdate } from "@/lib/telegram-bot";
@@ -51,6 +62,7 @@ beforeEach(() => {
   vi.mocked(getPrisma).mockReturnValue(db as never);
   db.telegramUpdate.create.mockResolvedValue({});
   db.expenseSlip.create.mockResolvedValue({ id: EXPENSE_ID });
+  vi.mocked(isSlipOcrConfigured).mockReturnValue(false);
 });
 
 describe("handleTelegramUpdate", () => {
@@ -90,6 +102,31 @@ describe("handleTelegramUpdate", () => {
       "บันทึก 60.00 บาท · ข้าว",
       expect.objectContaining({ inline_keyboard: expect.any(Array) }),
     );
+  });
+
+  it("records a backdated entry without a time", async () => {
+    await handleTelegramUpdate(textUpdate("1/1/2569 อาหาร 50"), config);
+    expect(db.expenseSlip.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          amount: 50,
+          note: "อาหาร",
+          paidDate: new Date("2026-01-01T00:00:00.000Z"),
+          paidTime: null,
+        }),
+      }),
+    );
+    expect(sendMessage).toHaveBeenCalledWith(
+      OWNER,
+      expect.stringMatching(/^บันทึก 50\.00 บาท · อาหาร · วันที่ /),
+      expect.objectContaining({ inline_keyboard: expect.any(Array) }),
+    );
+  });
+
+  it("explains a date it cannot use and saves nothing", async () => {
+    await handleTelegramUpdate(textUpdate("31/2/2569 ข้าว 60"), config);
+    expect(db.expenseSlip.create).not.toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledWith(OWNER, "ไม่มีวันที่ 31/2/2569 ในปฏิทิน");
   });
 
   it("answers unreadable text with a hint and saves nothing", async () => {
@@ -224,6 +261,132 @@ describe("handleTelegramUpdate", () => {
     expect(sendMessage).toHaveBeenCalledWith(OWNER, "บันทึก 350.00 บาท · ค่าไฟ · มีรูปสลิป", expect.anything());
   });
 
+  function bareSlip(updateId: number, caption?: string) {
+    vi.mocked(isSlipOcrConfigured).mockReturnValue(true);
+    vi.mocked(getFilePath).mockResolvedValue("photos/file.jpg");
+    vi.mocked(downloadFile).mockResolvedValue(new Uint8Array([0xff, 0xd8, 0xff, 0x00]));
+    vi.mocked(uploadSlip).mockResolvedValue("drive-4");
+    return {
+      update_id: updateId,
+      message: { message_id: 15, chat: { id: OWNER, type: "private" }, caption, photo: [{ file_id: "p", width: 10, height: 10 }] },
+    };
+  }
+
+  it("reads a photo without an amount and saves what the slip says", async () => {
+    vi.mocked(readSlip).mockResolvedValue({ amount: 245.5, date: "2026-01-02", time: "14:05", payee: "ร้านข้าวแกง" });
+    await handleTelegramUpdate(bareSlip(7, "มื้อเที่ยง"), config);
+    expect(db.expenseSlip.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          amount: 245.5,
+          paidDate: new Date("2026-01-02T00:00:00.000Z"),
+          paidTime: "14:05",
+          payee: "ร้านข้าวแกง",
+          note: "มื้อเที่ยง",
+          driveFileId: "drive-4",
+        }),
+      }),
+    );
+    expect(uploadSlip).toHaveBeenCalledWith(expect.any(Uint8Array), "02-01-2026_14-05.jpg", "image/jpeg");
+    expect(sendMessage).toHaveBeenCalledWith(
+      OWNER,
+      expect.stringMatching(/^อ่านจากสลิป .*\/undo\nบันทึก 245\.50 บาท · ร้านข้าวแกง · มื้อเที่ยง · วันที่ .* · 14:05 น\. · มีรูปสลิป$/),
+      expect.anything(),
+    );
+  });
+
+  it("does not read the slip when the caption has an amount", async () => {
+    await handleTelegramUpdate(bareSlip(8, "60 ข้าว"), config);
+    expect(readSlip).not.toHaveBeenCalled();
+    expect(db.expenseSlip.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ amount: 60, note: "ข้าว" }) }),
+    );
+  });
+
+  it("asks for the amount when the slip cannot be read, without uploading", async () => {
+    vi.mocked(readSlip).mockResolvedValue(null);
+    await handleTelegramUpdate(bareSlip(9), config);
+    expect(uploadSlip).not.toHaveBeenCalled();
+    expect(db.expenseSlip.create).not.toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledWith(
+      OWNER,
+      expect.stringContaining("อ่านยอดเงินจากสลิปไม่ได้"),
+      { inline_keyboard: [[{ text: "ลองใหม่", callback_data: "img:retry" }]] },
+      15,
+    );
+  });
+
+  it("retries a Drive upload that fails once, so the owner sees nothing", async () => {
+    vi.mocked(readSlip).mockResolvedValue({ amount: 80, date: null, time: null, payee: null });
+    const update = bareSlip(10);
+    vi.mocked(uploadSlip).mockRejectedValueOnce(new Error("Failed to upload slip to Drive: HTTP 429"));
+    await handleTelegramUpdate(update, config);
+    expect(uploadSlip).toHaveBeenCalledTimes(2);
+    expect(db.expenseSlip.create).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(OWNER, expect.stringContaining("บันทึก 80.00 บาท"), expect.anything());
+  });
+
+  it("does not retry when Drive is not connected", async () => {
+    vi.mocked(readSlip).mockResolvedValue({ amount: 80, date: null, time: null, payee: null });
+    const update = bareSlip(11);
+    vi.mocked(uploadSlip).mockRejectedValue(new DriveNotConnectedError());
+    await handleTelegramUpdate(update, config);
+    expect(uploadSlip).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(OWNER, expect.stringContaining("ที่หน้าสลิปค่าใช้จ่ายบนเว็บ"));
+  });
+
+  it("runs the photo again from the retry button, without a new upload from the owner", async () => {
+    vi.mocked(readSlip).mockResolvedValue({ amount: 99, date: null, time: null, payee: null });
+    const photo = bareSlip(12).message;
+    await handleTelegramUpdate(
+      {
+        update_id: 13,
+        callback_query: {
+          id: "cb-retry",
+          data: "img:retry",
+          message: { message_id: 30, chat: { id: OWNER, type: "private" }, text: "บันทึกรูปนี้ไม่สำเร็จ", reply_to_message: photo },
+        },
+      },
+      config,
+    );
+    expect(editMessageText).toHaveBeenNthCalledWith(1, OWNER, 30, "กำลังลองใหม่…", { inline_keyboard: [] });
+    expect(db.expenseSlip.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ amount: 99, driveFileId: "drive-4" }) }),
+    );
+    expect(editMessageText).toHaveBeenLastCalledWith(OWNER, 30, "ลองใหม่แล้ว ดูผลด้านล่าง", { inline_keyboard: [] });
+  });
+
+  it("offers the button again when a retry fails", async () => {
+    vi.mocked(readSlip).mockResolvedValue({ amount: 99, date: null, time: null, payee: null });
+    const photo = bareSlip(14).message;
+    db.expenseSlip.create.mockRejectedValue(new Error("db down"));
+    await handleTelegramUpdate(
+      {
+        update_id: 15,
+        callback_query: {
+          id: "cb-retry",
+          data: "img:retry",
+          message: { message_id: 31, chat: { id: OWNER, type: "private" }, text: "x", reply_to_message: photo },
+        },
+      },
+      config,
+    );
+    expect(editMessageText).toHaveBeenLastCalledWith(OWNER, 31, "ลองใหม่ยังไม่สำเร็จ", { inline_keyboard: [] });
+    expect(sendMessage).toHaveBeenCalledWith(OWNER, expect.stringContaining("ไม่ต้องส่งรูปซ้ำ"), expect.anything(), 15);
+  });
+
+  it("says so when the retry button has lost its photo", async () => {
+    await handleTelegramUpdate(
+      {
+        update_id: 16,
+        callback_query: { id: "cb-lost", data: "img:retry", message: { message_id: 32, chat: { id: OWNER, type: "private" }, text: "x" } },
+      },
+      config,
+    );
+    expect(answerCallbackQuery).toHaveBeenCalledWith("cb-lost", "ไม่พบรูปเดิม กรุณาส่งรูปใหม่");
+    expect(db.expenseSlip.create).not.toHaveBeenCalled();
+  });
+
   it("trashes the uploaded image when saving the expense fails", async () => {
     vi.mocked(getFilePath).mockResolvedValue("photos/file.jpg");
     vi.mocked(downloadFile).mockResolvedValue(new Uint8Array([0xff, 0xd8, 0xff, 0x00]));
@@ -236,8 +399,15 @@ describe("handleTelegramUpdate", () => {
       },
       config,
     );
+    // Saving was tried three times before giving up.
+    expect(db.expenseSlip.create).toHaveBeenCalledTimes(3);
     expect(trashSlip).toHaveBeenCalledWith("drive-3");
-    expect(sendMessage).toHaveBeenCalledWith(OWNER, "บันทึกไม่สำเร็จ กรุณาลองใหม่");
+    expect(sendMessage).toHaveBeenCalledWith(
+      OWNER,
+      'บันทึกรูปนี้ไม่สำเร็จ กด "ลองใหม่" ได้เลยโดยไม่ต้องส่งรูปซ้ำ',
+      { inline_keyboard: [[{ text: "ลองใหม่", callback_data: "img:retry" }]] },
+      14,
+    );
   });
 });
 
