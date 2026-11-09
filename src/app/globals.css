@@ -285,3 +285,8 @@ a.shift-pill:hover{filter:brightness(1.1)}
 .tx-date{display:none}
 .two-week{grid-template-columns:1fr;gap:6px}.tw-day{min-height:0;flex-direction:row;flex-wrap:wrap;align-items:center;padding:8px 10px}.tw-date{flex:0 0 64px}.tw-date b{display:inline;font-size:14px}.tw-pill{display:flex;gap:6px;align-items:center}
 }
+
+/* Native file inputs (slip form): match the pill buttons. */
+input[type="file"]{color:var(--muted);font:inherit;font-size:13px}
+input[type="file"]::file-selector-button{margin-right:12px;padding:8px 16px;border:1px solid var(--line);border-radius:999px;background:#242428;color:var(--text);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+input[type="file"]::file-selector-button:hover{border-color:var(--lime);background:#2b2b30}
