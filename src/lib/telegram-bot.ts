@@ -5,6 +5,7 @@ import { categoryLabel } from "@/lib/expense-categories";
 import { DriveAuthError, DriveNotConnectedError, trashSlip, uploadSlip } from "@/lib/google-drive";
 import { getPrisma } from "@/lib/prisma";
 import { detectImageType, slipDriveFileName } from "@/lib/slip-input";
+import { describeError, withRetry } from "@/lib/retry";
 import { isSlipOcrConfigured, readSlip } from "@/lib/slip-ocr";
 import { recordSubscriptionPayment } from "@/lib/subscription-payment";
 import {
@@ -19,9 +20,11 @@ import { chatAccess, type TelegramConfig } from "@/lib/telegram-auth";
 import {
   FORMAT_HINT,
   HELP_TEXT,
+  RETRY_IMAGE_CALLBACK,
   buildCategoryKeyboard,
   buildDeleteConfirm,
   buildDeletePicker,
+  buildRetryImageKeyboard,
   decodeCategoryCallback,
   decodeDeleteCallback,
   describeExpense,
@@ -94,10 +97,34 @@ export async function handleTelegramUpdate(update: unknown, config: TelegramConf
     if (callback) await handleCallback(callback, chat.id);
     else if (message) await handleMessage(message);
   } catch (error) {
-    console.error("[telegram] update failed:", error instanceof Error ? error.name : "unknown");
-    if (callback) await answerCallbackQuery(callback.id, "เกิดข้อผิดพลาด").catch(() => undefined);
-    else await trySend(chat.id, "บันทึกไม่สำเร็จ กรุณาลองใหม่");
+    console.error("[telegram] update failed:", describeError(error));
+    // A photo that failed gets a button that retries it, so it need not be sent again.
+    const photo = failedPhoto(message, callback);
+    if (photo) {
+      await sendMessage(chat.id, FAILED_PHOTO_TEXT, buildRetryImageKeyboard(), photo.message_id).catch(() => undefined);
+    } else if (callback) {
+      await answerCallbackQuery(callback.id, "เกิดข้อผิดพลาด").catch(() => undefined);
+    } else {
+      await trySend(chat.id, "บันทึกไม่สำเร็จ กรุณาลองใหม่");
+    }
   }
+}
+
+const FAILED_PHOTO_TEXT = 'บันทึกรูปนี้ไม่สำเร็จ กด "ลองใหม่" ได้เลยโดยไม่ต้องส่งรูปซ้ำ';
+
+function failedPhoto(message: TgMessage | undefined, callback: TgCallbackQuery | undefined): TgMessage | null {
+  if (message && pickImage(message)) return message;
+  const original = callback?.data === RETRY_IMAGE_CALLBACK ? callback.message?.reply_to_message : undefined;
+  return original && pickImage(original) ? original : null;
+}
+
+/** Only for errors that may pass: a missing Drive connection or an oversized file will not. */
+function isTransient(error: unknown): boolean {
+  return !(
+    error instanceof DriveNotConnectedError ||
+    error instanceof DriveAuthError ||
+    error instanceof FileTooLargeError
+  );
 }
 
 async function handleMessage(message: TgMessage) {
@@ -187,6 +214,8 @@ const NO_AMOUNT_HINT = "ใส่ยอดเงินในคำบรรย�
  */
 async function handleImage(message: TgMessage, image: ImageRef, text: string) {
   const chatId = message.chat.id;
+  // The retry button needs the photo to be the message it replies to.
+  const photoMessageId = pickImage(message) ? message.message_id : undefined;
   const today = appDateString();
   const entry = parseEntry(text, today);
   if (entry && !entry.ok) return sendMessage(chatId, entry.error);
@@ -197,7 +226,10 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
 
   let bytes: Uint8Array;
   try {
-    bytes = await downloadFile(await getFilePath(image.fileId), MAX_TELEGRAM_IMAGE_BYTES);
+    bytes = await withRetry(
+      async () => downloadFile(await getFilePath(image.fileId), MAX_TELEGRAM_IMAGE_BYTES),
+      { shouldRetry: isTransient },
+    );
   } catch (error) {
     if (error instanceof FileTooLargeError) return sendMessage(chatId, "รูปใหญ่เกิน 10 MB");
     throw error;
@@ -210,7 +242,14 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
     expenseData = fromEntry(entry.expense, today);
   } else {
     const reading = await readSlip(bytes, contentType, today);
-    if (!reading) return sendMessage(chatId, `อ่านยอดเงินจากสลิปไม่ได้ ${NO_AMOUNT_HINT}`);
+    if (!reading) {
+      return sendMessage(
+        chatId,
+        `อ่านยอดเงินจากสลิปไม่ได้ กด "ลองใหม่" หรือ${NO_AMOUNT_HINT}`,
+        photoMessageId === undefined ? undefined : buildRetryImageKeyboard(),
+        photoMessageId,
+      );
+    }
     const date = reading.date ?? today;
     expenseData = {
       amount: reading.amount,
@@ -224,7 +263,7 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
   const driveName = slipDriveFileName(expenseData.date, expenseData.paidTime ?? appTimeString(), contentType);
   let driveFileId: string;
   try {
-    driveFileId = await uploadSlip(bytes, driveName, contentType);
+    driveFileId = await withRetry(() => uploadSlip(bytes, driveName, contentType), { shouldRetry: isTransient });
   } catch (error) {
     if (error instanceof DriveNotConnectedError || error instanceof DriveAuthError) {
       return sendMessage(chatId, `${error.message} ที่หน้าสลิปค่าใช้จ่ายบนเว็บ`);
@@ -234,12 +273,13 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
 
   let expense: { id: string };
   try {
-    expense = await createExpense(expenseData, {
+    const stored = {
       driveFileId,
       fileName: image.fileName ? sanitizeFileName(image.fileName) : driveName,
       contentType,
       sizeBytes: bytes.length,
-    });
+    };
+    expense = await withRetry(() => createExpense(expenseData, stored));
   } catch (error) {
     await trashSlip(driveFileId).catch(() => undefined);
     throw error;
@@ -248,6 +288,8 @@ async function handleImage(message: TgMessage, image: ImageRef, text: string) {
 }
 
 async function handleCallback(callback: TgCallbackQuery, chatId: number) {
+  if (callback.data === RETRY_IMAGE_CALLBACK) return handleRetryImage(callback, chatId);
+
   const paid = decodePaidCallback(callback.data ?? "");
   if (paid) return handlePaidCallback(callback, chatId, paid);
 
@@ -272,6 +314,27 @@ async function handleCallback(callback: TgCallbackQuery, chatId: number) {
       inline_keyboard: [],
     }).catch(() => undefined);
   }
+}
+
+/** Runs a failed photo again from the message the failure notice replied to. */
+async function handleRetryImage(callback: TgCallbackQuery, chatId: number) {
+  const notice = callback.message;
+  const photo = notice?.reply_to_message;
+  const image = photo ? pickImage(photo) : null;
+  if (!notice || !photo || !image) {
+    return answerCallbackQuery(callback.id, "ไม่พบรูปเดิม กรุณาส่งรูปใหม่");
+  }
+  // Remove the button first so a second tap does not save the slip twice.
+  await editMessageText(chatId, notice.message_id, "กำลังลองใหม่…", { inline_keyboard: [] }).catch(() => undefined);
+  await answerCallbackQuery(callback.id, "กำลังลองใหม่").catch(() => undefined);
+  try {
+    await handleImage(photo, image, photo.caption ?? "");
+  } catch (error) {
+    // The update handler replies to the photo again with a fresh button.
+    await editMessageText(chatId, notice.message_id, "ลองใหม่ยังไม่สำเร็จ", { inline_keyboard: [] }).catch(() => undefined);
+    throw error;
+  }
+  await editMessageText(chatId, notice.message_id, "ลองใหม่แล้ว ดูผลด้านล่าง", { inline_keyboard: [] }).catch(() => undefined);
 }
 
 const PAID_NOTES = {

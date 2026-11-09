@@ -1,4 +1,5 @@
 import "server-only";
+import { withRetry } from "@/lib/retry";
 
 /**
  * Reads a payment slip or receipt with the Gemini API. Optional: without GEMINI_API_KEY
@@ -16,7 +17,9 @@ export type SlipReading = {
 
 // The lite alias answered a slip in about 2 s on 2026-11-09; full Flash took over 75 s under load.
 const DEFAULT_MODEL = "gemini-flash-lite-latest";
-const TIMEOUT_MS = 25_000;
+const TIMEOUT_MS = 20_000;
+// Busy or rate-limited answers (429, 5xx) and timeouts are tried again after these waits.
+const RETRY_DELAYS_MS = [2000, 5000];
 const MAX_AMOUNT = 1_000_000_000;
 
 const PROMPT = [
@@ -83,6 +86,13 @@ export function toSlipReading(value: unknown, today: string): SlipReading | null
   };
 }
 
+class BusyError extends Error {
+  constructor(readonly status: number) {
+    super(`Gemini busy: HTTP ${status}`);
+    this.name = "BusyError";
+  }
+}
+
 type GeminiResponse = { candidates?: { content?: { parts?: { text?: string }[] } }[] };
 
 /** Returns null when OCR is off, the call fails, or the image has no readable amount. */
@@ -91,24 +101,36 @@ export async function readSlip(bytes: Uint8Array, contentType: string, today: st
   if (!apiKey) return null;
   const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
 
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+  const body = JSON.stringify({
+    contents: [
       {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { inline_data: { mime_type: contentType, data: Buffer.from(bytes).toString("base64") } },
-                { text: PROMPT },
-              ],
-            },
-          ],
-          generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA },
-        }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        parts: [
+          { inline_data: { mime_type: contentType, data: Buffer.from(bytes).toString("base64") } },
+          { text: PROMPT },
+        ],
+      },
+    ],
+    generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA },
+  });
+
+  try {
+    const response = await withRetry(
+      async () => {
+        const answer = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+            body,
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          },
+        );
+        if (answer.status === 429 || answer.status >= 500) throw new BusyError(answer.status);
+        return answer;
+      },
+      {
+        delaysMs: RETRY_DELAYS_MS,
+        shouldRetry: (error) => error instanceof BusyError || (error instanceof Error && error.name === "TimeoutError"),
       },
     );
     if (!response.ok) {
@@ -120,7 +142,7 @@ export async function readSlip(bytes: Uint8Array, contentType: string, today: st
     const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
     return toSlipReading(JSON.parse(text), today);
   } catch (error) {
-    console.error("[slip-ocr] read failed:", error instanceof Error ? error.name : "unknown");
+    console.error("[slip-ocr] read failed:", error instanceof BusyError ? `HTTP ${error.status}` : error instanceof Error ? error.name : "unknown");
     return null;
   }
 }

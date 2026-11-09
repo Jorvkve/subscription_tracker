@@ -127,7 +127,14 @@ export function parseEntry(input: string, today: string): EntryResult | null {
   return { ok: true, expense: { ...parsed, date } };
 }
 
-export type BotCommand ="start" | "help" | "today" | "month" | "undo";
+/** The button under a failed photo; the photo itself is the message it replies to. */
+export const RETRY_IMAGE_CALLBACK = "img:retry";
+
+export function buildRetryImageKeyboard(): InlineKeyboard {
+  return { inline_keyboard: [[{ text: "ลองใหม่", callback_data: RETRY_IMAGE_CALLBACK }]] };
+}
+
+export type BotCommand = "start" | "help" | "today" | "month" | "undo";
 
 export function parseCommand(text: string): BotCommand | null {
   const match = /^\/(start|help|today|month|undo)(?:@\w+)?(?:\s|$)/i.exec(text.trim());
