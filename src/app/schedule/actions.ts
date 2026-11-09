@@ -15,6 +15,7 @@ import {
   type TaskFormInput,
 } from "@/lib/schedule-input";
 import { requireSession } from "@/lib/session";
+import { parseShiftScope, seriesWhere } from "@/lib/shift-series";
 import type { FormActionState } from "@/app/actions";
 
 export async function createTask(
@@ -183,18 +184,37 @@ export async function updateShift(
   } catch (error) {
     return { error: error instanceof Error ? error.message : "ตรวจสอบข้อมูลอีกครั้ง" };
   }
+  const scope = parseShiftScope(formData.get("scope"));
 
   try {
-    await getPrisma().workShift.update({
-      where: { id },
-      data: {
-        title: data.title,
-        date: utcDate(data.date),
-        startTime: data.startTime,
-        endTime: data.endTime,
-        location: data.location,
-        notes: data.notes,
-      },
+    const prisma = getPrisma();
+    await prisma.$transaction(async (tx) => {
+      const current = await tx.workShift.findUnique({ where: { id } });
+      if (!current) throw new Error("ไม่พบกะงานนี้");
+      // Other shifts in the scope keep their own dates; only this shift can move.
+      if (scope !== "this") {
+        await tx.workShift.updateMany({
+          where: { ...seriesWhere(current, scope), id: { not: id } },
+          data: {
+            title: data.title,
+            startTime: data.startTime,
+            endTime: data.endTime,
+            location: data.location,
+            notes: data.notes,
+          },
+        });
+      }
+      await tx.workShift.update({
+        where: { id },
+        data: {
+          title: data.title,
+          date: utcDate(data.date),
+          startTime: data.startTime,
+          endTime: data.endTime,
+          location: data.location,
+          notes: data.notes,
+        },
+      });
     });
   } catch {
     return { error: "บันทึกกะงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" };
@@ -205,9 +225,15 @@ export async function updateShift(
   redirect("/schedule");
 }
 
-export async function deleteShift(id: string): Promise<void> {
+export async function deleteShift(id: string, formData: FormData): Promise<void> {
   await requireSession();
-  await getPrisma().workShift.delete({ where: { id } });
+  const scope = parseShiftScope(formData.get("scope"));
+  const prisma = getPrisma();
+  const current = await prisma.workShift.findUnique({ where: { id } });
+  if (current) {
+    if (scope === "this") await prisma.workShift.delete({ where: { id } });
+    else await prisma.workShift.deleteMany({ where: seriesWhere(current, scope) });
+  }
   revalidatePath("/");
   revalidatePath("/schedule");
   redirect("/schedule");

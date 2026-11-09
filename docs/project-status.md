@@ -5,7 +5,7 @@ Handoff for any agent or person picking this up. Last updated 2026-11-09.
 ## Where things run
 
 - App: Vercel, `https://subscriptiontracker-gilt.vercel.app`, deployed from `main`.
-- Database: Supabase PostgreSQL, all 6 migrations applied (`20261109000000_add_reminder_telegram_delivery` on 2026-11-08). A local PostgreSQL copy on the owner's PC is a stale fallback.
+- Database: Supabase PostgreSQL, all 7 migrations applied (latest `20261110000000_add_category_budgets` on 2026-11-09). A local PostgreSQL copy on the owner's PC is a stale fallback.
 - Slip images: the owner's Google Drive, app-created `Subtrack Slips` folder, `drive.file` scope, files named `DD-MM-YYYY_HH-mm`.
 - Telegram bot: `@subtrack_jorv_bot`, webhook `https://subscriptiontracker-gilt.vercel.app/api/telegram/webhook`, registered with a secret token. Env vars `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ALLOWED_CHAT_ID` are set in Vercel and `.env`.
 
@@ -20,12 +20,16 @@ Handoff for any agent or person picking this up. Last updated 2026-11-09.
 - Backdated bot entries (deployed 2026-11-09, commit 3c98dac): a leading date such as `8/11/2569 อาหาร 50`, `8/11 ข้าว 60` (this year, or last year if that date is still ahead), or a relative day anywhere in the text: `เมื่อวาน`/`เมื่อวานนี้`/`วานนี้` is today −1 and `วานซืน` today −2 (`กาแฟ 45 เมื่อวาน`, `ข้าวเมื่อวาน 60`). The relative word is left out of the note. Buddhist and Christian years both work; future and impossible dates are refused. Backdated entries are saved without a time. Photo captions accept the same format. Parsing is `parseEntry` in `src/lib/telegram-parse.ts`.
 - Slip reading with Gemini (deployed 2026-11-09, commit 3c98dac): `src/lib/slip-ocr.ts` calls the Gemini REST API with `GEMINI_API_KEY` and an optional `GEMINI_MODEL` (default `gemini-flash-lite-latest`; full Flash took over 75 s per slip on 2026-11-09). The bot reads a photo only when its caption or reply has no amount, then saves the amount, date, time, and payee and says "อ่านจากสลิป"; a caption amount always wins. On the web, choosing an image fills the form for the owner to check. Without the key both fall back to manual entry. The key is in the local `.env` (2026-11-09) and a generated test slip read correctly through `readSlip`; the owner added it to Vercel and redeployed the same day.
 - Album retries (deployed 2026-11-09): the owner sent several slips at once and some got "บันทึกไม่สำเร็จ", which forced a resend. The cause was not visible because the log held only the error name. Now each photo step (Telegram download, Drive upload, database insert, Gemini on 429/5xx/timeout) is retried twice with jittered waits via `src/lib/retry.ts`, and the log line names the error and its first message line. A photo that still fails gets a reply with a "ลองใหม่" button that runs it again from the replied-to photo, so no resend is needed. Ten parallel Gemini reads of a test slip all succeeded.
+- Monthly budgets per category (deployed 2026-11-09): `CategoryBudget` holds one THB amount per category key (`food`, `transport`, ...). The "งบรายเดือน" card on `/slips` shows bars per category and has the form that sets budgets; an empty field removes a budget. Expense rows store a key from the web or a Thai label from the bot, and `categoryKeyOf` in `src/lib/budget.ts` maps both. The bot warns once when a category crosses 80% and once when it goes over. It checks when a category button is tapped (new bot entries start in อื่นๆ) and when `/edit` raises an amount. `/month` lists the budgets. No budgets are set yet; the owner sets them on the web.
+- Nightly summary (deployed 2026-11-09): a second Vercel cron, `/api/cron/daily-summary` at `0 14 * * *` (21:00–21:59 Bangkok, since Hobby crons run once a day anywhere within the hour), sends today's entries, the month total, budgets, and tomorrow's shifts and due subscriptions to Telegram. Runs are logged as `daily-summary` on the activity page. Not yet seen running.
+- Shift edit and delete scopes (deployed 2026-11-09): like Google Calendar, editing or deleting a shift offers this shift, this and following, or all similar. "Similar" means the same title, start, end, and location (`src/lib/shift-series.ts`), so shifts created before this change group without a schema change. Edits to other shifts keep each shift's own date. Tested on throwaway shifts in December, which were then deleted.
 - Editing an amount from the bot (deployed 2026-11-09): `/edit` lists the same recent bot entries as `/undo`; picking one sends a prompt with a forced reply, and replying with an amount alone (`55`, `1,250 บาท`) updates it. The prompt ends with `รหัสรายการ <id>`, which is how the reply finds the entry without stored state. Only `TELEGRAM` entries can be edited.
 - Subscription reminders through Telegram (deployed 2026-11-08): the daily cron sends each 7/3/1-day reminder to the owner's chat with a "จ่ายแล้ว" button. The button pays only the cycle the reminder was for, so a repeat or late tap reports "รอบนี้บันทึกการจ่ายไปแล้ว". The web "mark paid" action and the bot share `src/lib/subscription-payment.ts`. Delivery is tracked in `Reminder.telegramAttemptedAt/SentAt/ErrorCode` and shown on the "ประวัติและระบบ" page.
 
 ## Not yet confirmed
 
-- Nothing open. On 2026-11-09 the owner confirmed in the live bot and on the web: the "จ่ายแล้ว" button, `/edit`, `/undo`, backdated entries, and Gemini slip reading in Telegram and on the web form. The reminder email and the Telegram reminder were confirmed by a manual production cron run. The test subscription "ทดสอบ Telegram (ลบได้)" and the test expense were deleted afterwards.
+- The first nightly summary (21:00–21:59 on 2026-11-10) and the first budget warning have not been seen yet.
+- Otherwise nothing open. On 2026-11-09 the owner confirmed in the live bot and on the web: the "จ่ายแล้ว" button, `/edit`, `/undo`, backdated entries, and Gemini slip reading in Telegram and on the web form. The reminder email and the Telegram reminder were confirmed by a manual production cron run. The test subscription "ทดสอบ Telegram (ลบได้)" and the test expense were deleted afterwards.
 - Tip: to post a test update to the webhook from Git Bash, write the JSON to a UTF-8 file and send it with `--data-binary @file`. Thai text in a command-line argument arrives garbled.
 
 ## Proposed next, owner to choose
@@ -34,9 +38,7 @@ Small items:
 - None open. Done 2026-11-09: `engines.node` is `22.x`, the daily cron deletes `TelegramUpdate` rows older than 30 days, and the Dashboard has the "ใช้ไปเดือนนี้" card.
 
 Features:
-- A nightly summary; check Vercel Hobby cron limits first.
-- Monthly budgets per category.
-- Editing repeated shifts as a series.
+- Goals and Perks pages are placeholders; the owner has not said what they should hold.
 
 ## Decisions from the owner
 

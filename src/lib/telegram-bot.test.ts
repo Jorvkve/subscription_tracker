@@ -22,6 +22,7 @@ vi.mock("@/lib/retry", async (importOriginal) => {
 });
 vi.mock("@/lib/slip-ocr", () => ({ isSlipOcrConfigured: vi.fn().mockReturnValue(false), readSlip: vi.fn() }));
 vi.mock("@/lib/subscription-payment", () => ({ recordSubscriptionPayment: vi.fn() }));
+vi.mock("@/lib/budget-data", () => ({ budgetAlertAfter: vi.fn().mockResolvedValue(null), monthBudgetLines: vi.fn().mockResolvedValue([]) }));
 vi.mock("@/lib/google-drive", () => ({
   DriveAuthError: class DriveAuthError extends Error {},
   DriveNotConnectedError: class DriveNotConnectedError extends Error {},
@@ -33,6 +34,7 @@ import { DriveNotConnectedError, trashSlip, uploadSlip } from "@/lib/google-driv
 import { getPrisma } from "@/lib/prisma";
 import { isSlipOcrConfigured, readSlip } from "@/lib/slip-ocr";
 import { recordSubscriptionPayment } from "@/lib/subscription-payment";
+import { budgetAlertAfter } from "@/lib/budget-data";
 import { answerCallbackQuery, downloadFile, editMessageText, getFilePath, sendMessage } from "@/lib/telegram";
 import { handleTelegramUpdate } from "@/lib/telegram-bot";
 import type { InlineKeyboard } from "@/lib/telegram-parse";
@@ -526,5 +528,39 @@ describe("/edit amount", () => {
     db.expenseSlip.findUnique.mockResolvedValue({ ...row, source: "WEB" });
     await handleTelegramUpdate(reply("55", 64), config);
     expect(db.expenseSlip.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("budget warnings", () => {
+  const ID = "cmh7k2x9b0000abcd1234efgh";
+  function categoryTap(key: string, updateId: number) {
+    return {
+      update_id: updateId,
+      callback_query: { id: "cb", data: `cat:${ID}:${key}`, message: { message_id: 11, chat: { id: OWNER, type: "private" }, text: "บันทึก 600.00 บาท" } },
+    };
+  }
+  const stored = { source: "TELEGRAM", category: "อื่นๆ", amount: 600, currency: "THB", paidDate: new Date("2026-11-09T00:00:00.000Z") };
+
+  it("checks the budget of the category an entry was moved into and sends the warning", async () => {
+    db.expenseSlip.findUnique.mockResolvedValue(stored);
+    vi.mocked(budgetAlertAfter).mockResolvedValueOnce("⚠️ เกินงบอาหารแล้ว");
+    await handleTelegramUpdate(categoryTap("food", 70), config);
+    expect(budgetAlertAfter).toHaveBeenCalledWith("อาหาร", "2026-11-09", 600, "THB");
+    expect(sendMessage).toHaveBeenCalledWith(OWNER, "⚠️ เกินงบอาหารแล้ว");
+  });
+
+  it("stays quiet when no threshold was crossed or the category did not change", async () => {
+    db.expenseSlip.findUnique.mockResolvedValue({ ...stored, category: "อาหาร" });
+    await handleTelegramUpdate(categoryTap("food", 71), config);
+    expect(budgetAlertAfter).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("still sets the category when the budget check fails", async () => {
+    db.expenseSlip.findUnique.mockResolvedValue(stored);
+    vi.mocked(budgetAlertAfter).mockRejectedValueOnce(new Error("db down"));
+    await handleTelegramUpdate(categoryTap("food", 72), config);
+    expect(answerCallbackQuery).toHaveBeenCalledWith("cb", "บันทึกหมวดแล้ว");
+    expect(sendMessage).not.toHaveBeenCalledWith(OWNER, "บันทึกไม่สำเร็จ กรุณาลองใหม่");
   });
 });

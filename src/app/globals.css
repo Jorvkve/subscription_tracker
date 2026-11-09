@@ -312,3 +312,35 @@ input[type="file"]::file-selector-button:hover{border-color:var(--lime);backgrou
 .shift-past .shift-lines{margin-top:4px;opacity:.75}
 .shift-panel-lines{max-height:min(560px,65vh);overflow-y:auto;padding-right:4px;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3a3a40 transparent}
 .shift-line-bar.tone-day{background:var(--lime)}.shift-line-bar.tone-afternoon{background:var(--yellow)}.shift-line-bar.tone-night{background:var(--purple)}
+
+/* Monthly budgets (Money Tracker). */
+.budget-list{display:grid;gap:14px;margin:4px 0 0;padding:0;list-style:none}
+.budget-row{display:grid;gap:6px}
+.budget-row-head{display:flex;justify-content:space-between;gap:10px;font-size:14px;font-weight:600}
+.budget-figures{color:var(--muted);font-weight:500;white-space:nowrap}
+.budget-figures b{font-weight:700}
+.budget-warn .budget-figures b{color:var(--amber)}
+.budget-over .budget-figures b{color:var(--red)}
+.budget-bar{height:10px;border-radius:999px;background:#2a2a2f;overflow:hidden}
+.budget-bar span{display:block;height:100%;border-radius:inherit;background:var(--lime)}
+.budget-warn .budget-bar span{background:var(--amber)}
+.budget-over .budget-bar span{background:var(--red)}
+.budget-row small{font-size:12px}
+.budget-edit{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.budget-edit summary{cursor:pointer;color:var(--lime);font-size:13px;font-weight:600;padding:4px 0}
+.budget-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+.budget-form .field span{font-size:12px}
+.budget-form-note{grid-column:1/-1;margin:0;font-size:12px}
+.budget-form .button{grid-column:1/-1;justify-self:start}
+@media(max-width:500px){.budget-form{grid-template-columns:1fr}}
+
+/* Shift edit/delete scope (this / following / all similar). */
+.scope-options{display:grid;gap:8px;margin:0;padding:12px 14px;border:1px solid var(--line);border-radius:14px}
+.scope-options legend{padding:0 6px;font-size:13px;font-weight:600}
+.scope-option{display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer}
+.scope-option input{width:18px;height:18px;accent-color:var(--lime)}
+.scope-options small{color:var(--muted);font-size:12px}
+.confirm-delete-scopes{flex-wrap:wrap;justify-content:flex-start}
+.confirm-delete-scopes form{display:contents}
+.page-header .header-actions:has(.confirm-delete-scopes){flex-basis:100%;max-width:100%}
+.page-header:has(.confirm-delete-scopes){flex-wrap:wrap}

@@ -1,12 +1,14 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
-import { addDays, appDateString, appTimeString, formatDate, utcDate } from "@/lib/dates";
+import { addDays, appDateString, appTimeString, dateOnly, formatDate, utcDate } from "@/lib/dates";
 import { categoryLabel } from "@/lib/expense-categories";
 import { DriveAuthError, DriveNotConnectedError, trashSlip, uploadSlip } from "@/lib/google-drive";
 import { getPrisma } from "@/lib/prisma";
 import { detectImageType, slipDriveFileName } from "@/lib/slip-input";
 import { describeError, withRetry } from "@/lib/retry";
 import { isSlipOcrConfigured, readSlip } from "@/lib/slip-ocr";
+import { categoryKeyOf, formatBudgetLines } from "@/lib/budget";
+import { budgetAlertAfter, monthBudgetLines } from "@/lib/budget-data";
 import { recordSubscriptionPayment } from "@/lib/subscription-payment";
 import {
   FileTooLargeError,
@@ -312,7 +314,10 @@ async function handleCallback(callback: TgCallbackQuery, chatId: number) {
   const label = decoded ? categoryLabel(decoded.key) : null;
   const db = getPrisma();
   const expense = decoded
-    ? await db.expenseSlip.findUnique({ where: { id: decoded.expenseId }, select: { source: true } })
+    ? await db.expenseSlip.findUnique({
+        where: { id: decoded.expenseId },
+        select: { source: true, category: true, amount: true, currency: true, paidDate: true },
+      })
     : null;
   if (!decoded || !label || !expense || expense.source !== "TELEGRAM") {
     return answerCallbackQuery(callback.id, "ไม่พบรายการ");
@@ -325,6 +330,20 @@ async function handleCallback(callback: TgCallbackQuery, chatId: number) {
     await editMessageText(chatId, callback.message.message_id, `${callback.message.text} · ${label}`, {
       inline_keyboard: [],
     }).catch(() => undefined);
+  }
+  // The amount just moved into this category; warn if that crossed its budget.
+  if (categoryKeyOf(expense.category) !== decoded.key) {
+    await sendBudgetAlert(chatId, label, dateOnly(expense.paidDate), Number(expense.amount), expense.currency);
+  }
+}
+
+/** A budget warning is extra: failing to send one never fails the update. */
+async function sendBudgetAlert(chatId: number, category: string, paidDate: string, amount: number, currency: string) {
+  try {
+    const alert = await budgetAlertAfter(category, paidDate, amount, currency);
+    if (alert) await sendMessage(chatId, alert);
+  } catch (error) {
+    console.error("[telegram] budget alert failed:", describeError(error));
   }
 }
 
@@ -412,7 +431,7 @@ async function sendMonth(chatId: number) {
   const first = `${month}-01`;
   const last = `${month}-${String(new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()).padStart(2, "0")}`;
   const db = getPrisma();
-  const [expenses, payments] = await Promise.all([
+  const [expenses, payments, budgets] = await Promise.all([
     db.expenseSlip.findMany({
       where: { paidDate: { gte: utcDate(first), lte: utcDate(last) } },
       select: { amount: true, currency: true, category: true },
@@ -422,16 +441,18 @@ async function sendMonth(chatId: number) {
       where: { paidAt: { gte: utcDate(addDays(first, -1)), lt: utcDate(addDays(last, 2)) } },
       select: { amount: true, currency: true, paidAt: true },
     }),
+    monthBudgetLines(month).catch(() => []),
   ]);
+  const budgetText = formatBudgetLines(budgets);
   await sendMessage(
     chatId,
-    formatMonthSummary(
+    [formatMonthSummary(
       month,
       expenses.map((row) => ({ amount: Number(row.amount), currency: row.currency, category: row.category })),
       payments
         .filter((row) => appDateString(row.paidAt).startsWith(month))
         .map((row) => ({ amount: Number(row.amount), currency: row.currency })),
-    ),
+    ), ...(budgetText.length ? ["", ...budgetText] : [])].join("\n"),
   );
 }
 
@@ -444,6 +465,8 @@ const DELETABLE_SELECT = {
   note: true,
   driveFileId: true,
   source: true,
+  category: true,
+  currency: true,
 } as const;
 
 type DeletableRow = {
@@ -534,6 +557,9 @@ async function handleEditReply(chatId: number, expenseId: string, text: string) 
   refreshPages();
   const summary = describeExpense({ ...toDeletable(row), amount }, appDateString(), 60);
   await sendMessage(chatId, `แก้ยอดแล้ว ${formatBaht(before)} → ${formatBaht(amount)} บาท\n${summary}`);
+  if (amount > before) {
+    await sendBudgetAlert(chatId, row.category, dateOnly(row.paidDate), amount - before, row.currency);
+  }
 }
 
 async function handleDeleteCallback(

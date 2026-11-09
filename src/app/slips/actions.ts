@@ -12,6 +12,7 @@ import {
   uploadSlip,
 } from "@/lib/google-drive";
 import { appDateString, appTimeString, utcDate } from "@/lib/dates";
+import { parseBudgetForm } from "@/lib/budget";
 import { EXPENSE_CATEGORIES } from "@/lib/expense-categories";
 import { isSlipOcrConfigured, readSlip, type SlipReading } from "@/lib/slip-ocr";
 import type { FormActionState } from "@/app/actions";
@@ -261,4 +262,29 @@ export async function readSlipImage(formData: FormData): Promise<SlipReadState> 
 
   const reading = await readSlip(bytes, contentType, appDateString());
   return reading ? { reading } : { error: "อ่านสลิปไม่ได้ กรุณากรอกเอง" };
+}
+
+/** Saves the monthly budget per category; an empty field removes that budget. */
+export async function saveBudgets(formData: FormData): Promise<void> {
+  await requireSession();
+  const back = String(formData.get("month") ?? "");
+  const month = /^\d{4}-\d{2}$/.test(back) ? back : null;
+  const suffix = month ? `&month=${month}` : "";
+  let budgets;
+  try {
+    budgets = parseBudgetForm(formData);
+  } catch {
+    redirect(`/slips?budget=error${suffix}`);
+  }
+  const prisma = getPrisma();
+  await prisma.$transaction(
+    Object.entries(budgets).map(([category, amount]) =>
+      amount === null
+        ? prisma.categoryBudget.deleteMany({ where: { category } })
+        : prisma.categoryBudget.upsert({ where: { category }, create: { category, amount }, update: { amount } }),
+    ),
+  );
+  revalidatePath("/");
+  revalidatePath("/slips");
+  redirect(`/slips?budget=saved${suffix}`);
 }

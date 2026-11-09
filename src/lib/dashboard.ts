@@ -1,3 +1,4 @@
+import { categoryKeyOf } from "@/lib/budget";
 import { addDays } from "@/lib/dates";
 import { categoryLabel } from "@/lib/expense-categories";
 
@@ -49,7 +50,8 @@ const categoryEmojis: Record<string, string> = {
 
 /** Emoji for an expense category key; free-text categories get a box. */
 export function categoryEmoji(category: string): string {
-  return categoryEmojis[category] ?? "📦";
+  // Rows store a key (food) from the web or a Thai label (อาหาร) from the bot.
+  return categoryEmojis[category] ?? categoryEmojis[categoryKeyOf(category)] ?? "📦";
 }
 
 /** The `count` months (YYYY-MM) ending with `lastMonth`, oldest first. */

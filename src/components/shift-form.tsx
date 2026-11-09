@@ -110,10 +110,13 @@ export function ShiftForm({
   action,
   values,
   isCreate = false,
+  scopeOptions = [],
 }: {
   action: (state: FormActionState, formData: FormData) => Promise<FormActionState>;
   values?: ShiftValues;
   isCreate?: boolean;
+  /** Edit only: which shifts the change applies to, as in Google Calendar. */
+  scopeOptions?: readonly { value: string; label: string }[];
 }) {
   const [state, formAction, isPending] = useActionState(action, {});
   const [recurrenceError, setRecurrenceError] = useState<string | null>(() =>
@@ -184,6 +187,18 @@ export function ShiftForm({
             placeholder="หมายเหตุหรือรายละเอียดงานในกะนี้"
           />
         </label>
+        {scopeOptions.length > 1 && (
+          <fieldset className="field field-wide scope-options">
+            <legend>บันทึกการแก้ไขกับ</legend>
+            {scopeOptions.map((option, index) => (
+              <label className="scope-option" key={option.value}>
+                <input type="radio" name="scope" value={option.value} defaultChecked={index === 0} />
+                <span>{option.label}</span>
+              </label>
+            ))}
+            <small>กะอื่นจะเปลี่ยนชื่อ เวลา สถานที่ และบันทึก แต่คงวันที่เดิมไว้</small>
+          </fieldset>
+        )}
       </div>
       <div className="form-actions">
         <Link className="button button-quiet" href="/schedule">

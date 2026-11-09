@@ -2,8 +2,11 @@ import Link from "next/link";
 import { ArrowRightIcon, CaretLeftIcon, CaretRightIcon, FolderIcon, PlusIcon } from "@/components/icons";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { quickAddExpense } from "@/app/slips/actions";
+import { quickAddExpense, saveBudgets } from "@/app/slips/actions";
 import { AppShell } from "@/components/app-shell";
+import { BudgetPanel } from "@/components/budget-panel";
+import { budgetLines, sumByCategory } from "@/lib/budget";
+import { loadBudgets } from "@/lib/budget-data";
 import { HeroHeader, firstName } from "@/components/hero-header";
 import { SpendDonut } from "@/components/spend-donut";
 import { categoryEmoji, monthKeys, relativeDayLabel, spendByCategory } from "@/lib/dashboard";
@@ -33,7 +36,7 @@ function lastDayOf(month: string): Date {
 export default async function SlipsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string | string[]; drive?: string | string[]; quick?: string | string[] }>;
+  searchParams: Promise<{ month?: string | string[]; drive?: string | string[]; quick?: string | string[]; budget?: string | string[] }>;
 }) {
   const session = await auth();
   if (!session?.user?.email) redirect("/signin");
@@ -44,7 +47,7 @@ export default async function SlipsPage({
   const trendMonths = monthKeys(monthLabel, 6);
 
   const prisma = getPrisma();
-  const [driveConnection, slips, trendSlips] = await Promise.all([
+  const [driveConnection, slips, trendSlips, budgets] = await Promise.all([
     prisma.driveConnection.findUnique({ where: { id: "default" }, select: { id: true } }),
     prisma.expenseSlip.findMany({
       where: { paidDate: { gte: utcDate(`${monthLabel}-01`), lte: lastDayOf(monthLabel) } },
@@ -55,6 +58,7 @@ export default async function SlipsPage({
       where: { currency: "THB", paidDate: { gte: utcDate(`${trendMonths[0]}-01`), lte: lastDayOf(monthLabel) } },
       select: { amount: true, paidDate: true },
     }),
+    loadBudgets(),
   ]);
 
   const isConnected = !!driveConnection;
@@ -65,6 +69,10 @@ export default async function SlipsPage({
   const otherTotals = Object.entries(totals).filter(([currency]) => currency !== "THB");
   const categories = spendByCategory(
     slips.filter((slip) => slip.currency === "THB").map((slip) => ({ category: slip.category, amount: Number(slip.amount) })),
+  );
+  const budgetRows = budgetLines(
+    budgets,
+    sumByCategory(slips.filter((slip) => slip.currency === "THB").map((slip) => ({ category: slip.category, amount: Number(slip.amount) }))),
   );
   const daysCounted = monthLabel === today.slice(0, 7) ? Number(today.slice(8)) : lastDayOf(monthLabel).getUTCDate();
 
@@ -91,6 +99,8 @@ export default async function SlipsPage({
       {query.drive === "connected" && <div className="success-banner stack-gap">เชื่อมต่อ Google Drive สำเร็จแล้ว</div>}
       {query.drive === "error" && <div className="error-banner stack-gap">เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive กรุณาลองใหม่อีกครั้ง</div>}
       {query.quick === "saved" && <div className="success-banner stack-gap">บันทึกรายจ่ายแล้ว 🎉</div>}
+      {query.budget === "saved" && <div className="success-banner stack-gap">บันทึกงบแล้ว 🎯</div>}
+      {query.budget === "error" && <div className="error-banner stack-gap">บันทึกงบไม่สำเร็จ ใส่ตัวเลขเป็นบาท เช่น 3000</div>}
       {query.quick === "error" && <div className="error-banner stack-gap">บันทึกไม่สำเร็จ ตรวจสอบจำนวนเงินแล้วลองใหม่อีกครั้ง</div>}
 
       {!isConnected && (
@@ -174,6 +184,8 @@ export default async function SlipsPage({
         </div>
 
         <div className="money-col">
+          <BudgetPanel lines={budgetRows} budgets={budgets} month={monthLabel} action={saveBudgets} />
+
           <section className="panel" aria-labelledby="where-title">
             <div className="card-heading">
               <h2 id="where-title" className="card-title">เงินหายไปไหน? <span aria-hidden>🤔</span></h2>

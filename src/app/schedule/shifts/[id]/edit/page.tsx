@@ -6,6 +6,7 @@ import { DeleteShiftButton } from "@/components/delete-shift-button";
 import { ShiftForm } from "@/components/shift-form";
 import { dateOnly } from "@/lib/dates";
 import { getPrisma } from "@/lib/prisma";
+import { scopeOptions, seriesWhere } from "@/lib/shift-series";
 
 export default async function EditShiftPage({
   params,
@@ -16,8 +17,14 @@ export default async function EditShiftPage({
   if (!session?.user?.email) redirect("/signin");
 
   const { id } = await params;
-  const shift = await getPrisma().workShift.findUnique({ where: { id } });
+  const db = getPrisma();
+  const shift = await db.workShift.findUnique({ where: { id } });
   if (!shift) notFound();
+  const [following, all] = await Promise.all([
+    db.workShift.count({ where: seriesWhere(shift, "following") }),
+    db.workShift.count({ where: seriesWhere(shift, "all") }),
+  ]);
+  const options = scopeOptions({ following, all });
 
   const action = updateShift.bind(null, id);
   const deleteAction = deleteShift.bind(null, id);
@@ -30,12 +37,16 @@ export default async function EditShiftPage({
           <p className="muted">อัปเดตรายละเอียดของ {shift.title}</p>
         </div>
         <div className="header-actions">
-          <DeleteShiftButton action={deleteAction} />
+          <DeleteShiftButton
+            action={deleteAction}
+            options={options.map((option) => ({ ...option, label: option.value === "this" ? "เฉพาะกะนี้" : option.label }))}
+          />
         </div>
       </header>
       <ShiftForm
         action={action}
         isCreate={false}
+        scopeOptions={options}
         values={{
           title: shift.title,
           date: dateOnly(shift.date),
