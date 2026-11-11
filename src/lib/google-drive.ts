@@ -24,7 +24,18 @@ function getAuthSecret(): string {
   return secret;
 }
 
+// An access token lasts about an hour. Reusing it skips a database read and a Google
+// round trip for every slip image; a 401 from Drive clears it (see driveFetch).
+let cachedToken: { value: string; expiresAt: number } | null = null;
+const TOKEN_MARGIN_MS = 5 * 60 * 1000;
+
+/** Forgets the cached access token, for example after Drive is reconnected. */
+export function clearAccessTokenCache(): void {
+  cachedToken = null;
+}
+
 async function getAccessToken(): Promise<string> {
+  if (cachedToken && Date.now() < cachedToken.expiresAt) return cachedToken.value;
   const prisma = getPrisma();
   const conn = await prisma.driveConnection.findUnique({ where: { id: "default" } });
   if (!conn) throw new DriveNotConnectedError();
@@ -64,11 +75,23 @@ async function getAccessToken(): Promise<string> {
     throw new Error(`Failed to refresh access token: HTTP ${res.status}`);
   }
 
-  const data = (await res.json()) as { access_token?: string };
+  const data = (await res.json()) as { access_token?: string; expires_in?: number };
   if (!data.access_token) {
     throw new Error("No access token in refresh response");
   }
+  const lifetimeMs = (Number(data.expires_in) || 3600) * 1000;
+  cachedToken = { value: data.access_token, expiresAt: Date.now() + Math.max(0, lifetimeMs - TOKEN_MARGIN_MS) };
   return data.access_token;
+}
+
+/** Calls Drive with the access token; a rejected cached token is replaced once. */
+async function driveFetch(url: string, init: RequestInit & { headers?: Record<string, string> } = {}): Promise<Response> {
+  const send = async () =>
+    fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${await getAccessToken()}` } });
+  const res = await send();
+  if (res.status !== 401) return res;
+  clearAccessTokenCache();
+  return send();
 }
 
 export async function ensureFolder(): Promise<string> {
@@ -78,13 +101,10 @@ export async function ensureFolder(): Promise<string> {
 
   if (conn.folderId) return conn.folderId;
 
-  const accessToken = await getAccessToken();
-
   // Create folder
-  const res = await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
+  const res = await driveFetch("https://www.googleapis.com/drive/v3/files?fields=id", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -115,7 +135,6 @@ export async function uploadSlip(
   contentType: string,
 ): Promise<string> {
   const folderId = await ensureFolder();
-  const accessToken = await getAccessToken();
 
   const metadata = JSON.stringify({
     name,
@@ -145,12 +164,11 @@ export async function uploadSlip(
   body.set(bytes, metaBytes.length + dataPartBytes.length);
   body.set(closeBytes, metaBytes.length + dataPartBytes.length + bytes.length);
 
-  const res = await fetch(
+  const res = await driveFetch(
     `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id`,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
         "Content-Type": `multipart/related; boundary=${boundary}`,
       },
       body,
@@ -168,13 +186,8 @@ export async function uploadSlip(
 }
 
 export async function downloadSlip(fileId: string): Promise<ReadableStream<Uint8Array>> {
-  const accessToken = await getAccessToken();
-
-  const res = await fetch(
+  const res = await driveFetch(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    },
   );
 
   if (!res.ok) {
@@ -186,14 +199,11 @@ export async function downloadSlip(fileId: string): Promise<ReadableStream<Uint8
 }
 
 export async function trashSlip(fileId: string): Promise<void> {
-  const accessToken = await getAccessToken();
-
-  const res = await fetch(
+  const res = await driveFetch(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`,
     {
       method: "PATCH",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ trashed: true }),
@@ -209,6 +219,7 @@ export async function trashSlip(fileId: string): Promise<void> {
 }
 
 export async function upsertDriveConnection(encryptedRefreshToken: string): Promise<void> {
+  clearAccessTokenCache();
   const prisma = getPrisma();
   await prisma.driveConnection.upsert({
     where: { id: "default" },

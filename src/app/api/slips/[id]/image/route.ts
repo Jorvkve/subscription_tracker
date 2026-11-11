@@ -35,7 +35,9 @@ export async function GET(
     headers: {
       "Content-Type": slip.contentType ?? "application/octet-stream",
       "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "private, no-store",
+      // A slip's image never changes after upload, so the owner's browser may keep it.
+      // "private" keeps shared caches and the CDN from storing it.
+      "Cache-Control": "private, max-age=2592000, immutable",
     },
   });
 }

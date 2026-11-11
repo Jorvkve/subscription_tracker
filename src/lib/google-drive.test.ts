@@ -22,6 +22,7 @@ import {
   downloadSlip,
   trashSlip,
   uploadSlip,
+  clearAccessTokenCache,
 } from "@/lib/google-drive";
 
 const mockPrisma = {
@@ -53,6 +54,7 @@ function mockFetch(responses: Array<{ ok: boolean; status?: number; body?: unkno
 }
 
 beforeEach(() => {
+  clearAccessTokenCache();
   vi.mocked(getPrisma).mockReturnValue(mockPrisma as never);
   setupEnv();
   vi.clearAllMocks();
@@ -167,5 +169,37 @@ describe("trashSlip", () => {
     ]);
 
     await expect(trashSlip("gone-file")).resolves.toBeUndefined();
+  });
+});
+
+describe("access token reuse", () => {
+  const connection = { id: "default", encryptedRefreshToken: "encrypted", folderId: "folder123" };
+
+  it("refreshes once and reuses the token for later Drive calls", async () => {
+    mockPrisma.driveConnection.findUnique.mockResolvedValue(connection);
+    mockFetch([
+      { ok: true, body: { access_token: "tok", expires_in: 3599 } },
+      { ok: true, stream: new ReadableStream() },
+      { ok: true, stream: new ReadableStream() },
+    ]);
+    await downloadSlip("a");
+    await downloadSlip("b");
+    const urls = vi.mocked(global.fetch).mock.calls.map((call) => String(call[0]));
+    expect(urls.filter((url) => url.includes("oauth2.googleapis.com/token"))).toHaveLength(1);
+    expect(urls).toHaveLength(3);
+    expect(vi.mocked(global.fetch).mock.calls[2][1]).toMatchObject({ headers: { Authorization: "Bearer tok" } });
+  });
+
+  it("gets a new token once when Drive rejects the cached one", async () => {
+    mockPrisma.driveConnection.findUnique.mockResolvedValue(connection);
+    const stream = new ReadableStream();
+    mockFetch([
+      { ok: true, body: { access_token: "old", expires_in: 3599 } },
+      { ok: false, status: 401 },
+      { ok: true, body: { access_token: "new", expires_in: 3599 } },
+      { ok: true, stream },
+    ]);
+    expect(await downloadSlip("a")).toBe(stream);
+    expect(vi.mocked(global.fetch).mock.calls[3][1]).toMatchObject({ headers: { Authorization: "Bearer new" } });
   });
 });
