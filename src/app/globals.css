@@ -374,3 +374,19 @@ input[type="file"]::file-selector-button:hover{border-color:var(--lime);backgrou
 .money-grid>.money-col{display:contents}
 .m-total{order:1}.m-quick{order:2}.m-budget{order:3}.m-tx{order:4}.m-donut{order:5}.m-trend{order:6}
 }
+
+/* Loading skeletons (each route's loading.tsx). */
+.skeleton-page{display:grid;gap:18px}
+.skeleton-hero{display:grid;gap:10px;margin:2px 0 10px}
+.skeleton-grid{display:grid;gap:18px;align-items:start}
+.skeleton-col{display:grid;gap:18px}
+.skeleton-card{display:grid;align-content:start;gap:12px;overflow:hidden}
+.skeleton-block{display:block;border-radius:8px;background:linear-gradient(90deg,#1f1f23 0%,#2a2a2f 50%,#1f1f23 100%);background-size:200% 100%;animation:skeleton-shimmer 1.4s ease-in-out infinite}
+.skeleton-line-sm{width:160px;height:14px}
+.skeleton-line-md{width:45%;height:16px}
+.skeleton-line-lg{width:min(320px,70%);height:34px}
+.skeleton-line-xl{width:70%;height:26px}
+.skeleton-fill{flex:1;min-height:60px;height:calc(100% - 80px)}
+@keyframes skeleton-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+@media(prefers-reduced-motion:reduce){.skeleton-block{animation:none}}
+@media(max-width:1180px){.skeleton-grid{grid-template-columns:1fr!important}.skeleton-col:not(:first-child){display:none}}

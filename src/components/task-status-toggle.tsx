@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import type { TaskStatus } from "@/generated/prisma/client";
-import { setTaskStatus } from "@/app/schedule/actions";
+import { setTaskStatus } from "@/app/(app)/schedule/actions";
 
 export function TaskStatusToggle({
   taskId,
