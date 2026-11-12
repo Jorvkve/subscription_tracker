@@ -6,6 +6,7 @@ export {
   Bell as BellIcon,
   CalendarBlank as CalendarBlankIcon,
   CalendarDots as CalendarDotsIcon,
+  CaretDoubleLeft as CaretDoubleLeftIcon,
   CaretLeft as CaretLeftIcon,
   CaretRight as CaretRightIcon,
   Check as CheckIcon,

@@ -11,6 +11,7 @@ import {
   SquaresFourIcon,
   TargetIcon,
 } from "@/components/icons";
+import { useSidebar } from "@/components/sidebar-state";
 
 const navItems = [
   { href: "/", label: "ภาพรวม", shortLabel: "ภาพรวม", Icon: SquaresFourIcon, tone: "lime" },
@@ -31,24 +32,30 @@ function isActive(pathname: string, href: string): boolean {
  * The menu lives in the shared layout, so it stays on screen between pages. It reads the
  * active tab from the URL, which updates the highlight as soon as a link is tapped.
  */
-export function NavLinks() {
+export function NavLinks({ badges = {} }: { badges?: Record<string, number> }) {
   const pathname = usePathname();
+  const { collapsed } = useSidebar();
   return (
     <nav className="side-nav" aria-label="เมนูหลัก">
       {navItems.map((item) => {
         const { href, label, shortLabel, Icon, tone } = item;
         const active = isActive(pathname, href);
         const desktopOnly = "desktopOnly" in item && item.desktopOnly;
+        const badge = badges[href] ?? 0;
         return (
           <Link
             className={`nav-link${active ? " active" : ""}${desktopOnly ? " nav-desktop-only" : ""}`}
             href={href}
             aria-current={active ? "page" : undefined}
             key={href}
+            title={collapsed ? (badge > 0 ? `${label} (${badge})` : label) : undefined}
           >
             <span className={`nav-icon tone-${tone}`}><Icon aria-hidden weight="duotone" /></span>
             <span className="nav-label-full">{label}</span>
             <span className="nav-label-short">{shortLabel}</span>
+            {badge > 0 && (
+              <span className="nav-badge" aria-label={`ใกล้ครบกำหนด ${badge} รายการ`}>{badge > 9 ? "9+" : badge}</span>
+            )}
           </Link>
         );
       })}

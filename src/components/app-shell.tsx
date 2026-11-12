@@ -2,6 +2,7 @@ import Link from "next/link";
 import { signOut } from "@/auth";
 import { NavLinks } from "@/components/nav-links";
 import { SignOutIcon } from "@/components/icons";
+import { CollapsibleLayout, SidebarToggle } from "@/components/sidebar-state";
 
 async function signOutAction() {
   "use server";
@@ -12,25 +13,32 @@ async function signOutAction() {
 export function AppShell({
   children,
   email,
+  sidebarCollapsed = false,
+  badges = {},
 }: {
   children: React.ReactNode;
   email: string;
+  sidebarCollapsed?: boolean;
+  /** Counts shown next to menu items, keyed by href. Zero shows nothing. */
+  badges?: Record<string, number>;
 }) {
   return (
-    <div className="app-layout">
+    <CollapsibleLayout initialCollapsed={sidebarCollapsed}>
       <a className="skip-link" href="#main-content">ข้ามไปยังเนื้อหา</a>
       <aside className="sidebar">
-        <Link className="brand" href="/">
+        <Link className="brand" href="/" title="SUBTRACK">
           <span className="brand-mark" aria-hidden>$</span>
-          <span><strong className="brand-name">SUBTRACK</strong><small>PERSONAL FINANCE</small></span>
+          <span className="brand-text"><strong className="brand-name">SUBTRACK</strong><small>PERSONAL FINANCE</small></span>
         </Link>
         <p className="nav-caption">เมนูหลัก</p>
-        <NavLinks />
+        <NavLinks badges={badges} />
         <div className="sidebar-bottom">
-          <div className="account-chip"><span className="avatar">{email.slice(0, 1).toUpperCase()}</span><span className="account-text"><strong>เจ้าของบัญชี</strong><span className="account-email">{email}</span></span></div>
+          <p className="nav-caption">บัญชี</p>
+          <div className="account-chip" title={email}><span className="avatar">{email.slice(0, 1).toUpperCase()}</span><span className="account-text"><strong>เจ้าของบัญชี</strong><span className="account-email">{email}</span></span></div>
           <form action={signOutAction}>
-            <button className="nav-link signout" type="submit"><span className="nav-icon"><SignOutIcon aria-hidden /></span> ออกจากระบบ</button>
+            <button className="nav-link signout" type="submit" title="ออกจากระบบ"><span className="nav-icon"><SignOutIcon aria-hidden /></span><span className="nav-label-full">ออกจากระบบ</span></button>
           </form>
+          <SidebarToggle />
         </div>
       </aside>
       <main className="main-area" id="main-content">
@@ -43,6 +51,6 @@ export function AppShell({
         </div>
         {children}
       </main>
-    </div>
+    </CollapsibleLayout>
   );
 }
