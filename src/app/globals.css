@@ -390,3 +390,4 @@ input[type="file"]::file-selector-button:hover{border-color:var(--lime);backgrou
 @keyframes skeleton-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
 @media(prefers-reduced-motion:reduce){.skeleton-block{animation:none}}
 @media(max-width:1180px){.skeleton-grid{grid-template-columns:1fr!important}.skeleton-col:not(:first-child){display:none}}
+.signin-with-features{display:block;padding:0;place-items:normal}.signin-hero{min-height:88vh;min-height:88svh;display:grid;place-items:center;padding:24px}.signin-features{padding:0 16px 48px}.signin-features .ib-root{max-width:1180px;margin:0 auto;border-radius:var(--radius-card);overflow:hidden}@media(max-width:600px){.signin-features{padding:0 0 32px}.signin-features .ib-root{border-radius:0}}
