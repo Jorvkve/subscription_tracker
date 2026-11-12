@@ -2,10 +2,11 @@ import Link from "next/link";
 import { ArrowRightIcon, PlusIcon } from "@/components/icons";
 import { HeroHeader, firstName } from "@/components/hero-header";
 import { SubscriptionSwitch } from "@/components/subscription-switch";
+import { ReceiptPricing, type ReceiptPlan } from "@/components/ui/receipt-pricing";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { SubscriptionStatus } from "@/generated/prisma/client";
-import { groupCostTotals } from "@/lib/billing";
+import { groupCostTotals, monthlyEquivalent } from "@/lib/billing";
 import { appDateString, dateOnly, formatDate } from "@/lib/dates";
 import { cycleName, dayDifference, money } from "@/lib/display";
 import { getPrisma } from "@/lib/prisma";
@@ -36,6 +37,30 @@ export default async function SubscriptionsPage() {
     intervalUnit: subscription.intervalUnit,
   })));
   const monthlyThb = totals.THB?.monthly ?? 0;
+  const receipts: ReceiptPlan[] = active.map((subscription) => {
+    const price = Number(subscription.price);
+    const monthly = monthlyEquivalent(price, subscription.intervalCount, subscription.intervalUnit);
+    const cycle = subscription.intervalCount === 1 ? `ทุก${shortCycle[subscription.intervalUnit]}` : cycleName(subscription.intervalCount, subscription.intervalUnit);
+    return {
+      id: subscription.id,
+      name: subscription.name,
+      tagline: `${money(price, subscription.currency)} ${cycle}`,
+      monthly,
+      yearly: monthly * 12,
+      currency: subscription.currency,
+      href: `/subscriptions/${subscription.id}`,
+      cta: "ดูรายละเอียด",
+      items: [
+        { label: "หมวด", value: subscription.category },
+        { label: "รอบบิล", value: cycle },
+        { label: "ตัดรอบถัดไป", value: formatDate(subscription.nextDueDate) },
+        { label: "จ่ายด้วย", value: subscription.paymentMethod || "-" },
+      ],
+    };
+  });
+  // The dearest THB subscription gets the featured line.
+  const dearest = receipts.filter((plan) => plan.currency === "THB").sort((a, b) => b.monthly - a.monthly)[0];
+  if (dearest && receipts.length > 1) dearest.featured = true;
   const upcoming = [...active].sort((a, b) => a.nextDueDate.getTime() - b.nextDueDate.getTime()).slice(0, 3);
 
   return (
@@ -129,6 +154,36 @@ export default async function SubscriptionsPage() {
           <Link className="rainbow-button" href="/subscriptions/new">เพิ่ม Sub ใหม่</Link>
           <p className="muted">ใส่ราคา รอบบิล และวันตัดเงิน แล้วระบบจะเตือนทาง Telegram และอีเมลก่อนถึงกำหนด 7, 3 และ 1 วัน</p>
         </section>
+
+        {receipts.length > 0 && (
+          <section className="panel receipts-panel" aria-labelledby="receipts-title">
+            <h2 id="receipts-title" className="card-title">ใบเสร็จค่า Sub <span aria-hidden>🧾</span></h2>
+            <p className="muted receipts-note">ค่าใช้จ่ายของแต่ละ Sub เทียบเป็นต่อเดือนและต่อปี สลับดูได้ด้านล่าง</p>
+            <ReceiptPricing
+              plans={receipts}
+              monthsFree={0}
+              showStamp={false}
+              currency="THB"
+              locale="th-TH"
+              merchant="Subtrack"
+              merchantNote="ใบสรุปค่าสมาชิก"
+              orderPrefix="ST"
+              labels={{
+                periodGroup: "ช่วงเวลา",
+                order: "เลขที่",
+                billing: "คิดแบบ",
+                monthly: "ต่อเดือน",
+                yearly: "ต่อปี",
+                featured: "จ่ายแพงสุด",
+                totalDue: "รวม",
+                perMonthYearly: "เฉลี่ย {amount} / เดือน",
+                billedMonthly: "เทียบเป็นต่อเดือน",
+                perMonth: "ต่อเดือน",
+                perYear: "ต่อปี",
+              }}
+            />
+          </section>
+        )}
       </div>
     </>
   );
