@@ -9,7 +9,7 @@
   "scripts": {
     "postinstall": "node scripts/prisma-generate.mjs",
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/build.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
