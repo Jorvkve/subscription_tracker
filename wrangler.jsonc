@@ -17,6 +17,14 @@
       "service": "subscription-tracker"
     }
   ],
+  "hyperdrive": [
+    {
+      // Supabase through Hyperdrive (session pooler, verify-full against Supabase's root CA,
+      // caching disabled so pages never show stale rows). Used by src/lib/prisma.ts.
+      "binding": "HYPERDRIVE",
+      "id": "74e1b00a47e74b62b3f85580e6c9288b"
+    }
+  ],
   "images": {
     "binding": "IMAGES"
   },

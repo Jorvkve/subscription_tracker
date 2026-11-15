@@ -19,6 +19,7 @@
     "db:deploy": "prisma migrate deploy"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "^1.20.17",
     "@phosphor-icons/react": "^2.1.10",
     "@prisma/adapter-pg": "^7.0.0",
     "@prisma/client": "^7.0.0",
@@ -31,7 +32,6 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
-    "@opennextjs/cloudflare": "^1.20.17",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.15.5",

@@ -1,6 +1,7 @@
 import "server-only";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import {
@@ -12,8 +13,28 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
+/**
+ * On Cloudflare Workers the database is reached through the HYPERDRIVE binding. Workers cannot
+ * trust Supabase's private root CA, so Hyperdrive holds that CA and verifies the database, and
+ * the Worker talks to Hyperdrive locally without TLS. Elsewhere there is no Cloudflare context.
+ */
+function hyperdriveConnectionString(): string | undefined {
+  try {
+    const env = getCloudflareContext().env as { HYPERDRIVE?: { connectionString?: string } };
+    return env.HYPERDRIVE?.connectionString;
+  } catch {
+    return undefined;
+  }
+}
+
 export function getPrisma() {
   if (globalForPrisma.prisma) return globalForPrisma.prisma;
+
+  const hyperdrive = hyperdriveConnectionString();
+  if (hyperdrive) {
+    // A fresh client per call: Workers cannot reuse a connection across requests.
+    return new PrismaClient({ adapter: new PrismaPg({ connectionString: hyperdrive }) });
+  }
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
