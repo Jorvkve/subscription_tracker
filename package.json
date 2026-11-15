@@ -7,14 +7,14 @@
     "node": "22.x"
   },
   "scripts": {
-    "postinstall": "prisma generate",
+    "postinstall": "node scripts/prisma-generate.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:generate": "prisma generate",
+    "db:generate": "node scripts/prisma-generate.mjs",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy"
   },
@@ -24,24 +24,26 @@
     "@prisma/client": "^7.0.0",
     "dotenv": "^17.2.3",
     "emailjs": "^5.0.4",
-    "next": "16.4.3",
+    "next": "^16.4.6",
     "next-auth": "5.0.0-beta.32",
     "pg": "^8.16.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.17",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.15.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.4.3",
+    "eslint-config-next": "^16.4.6",
     "prisma": "^7.0.0",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "typescript": "^5",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.0",
+    "wrangler": "^4.162.0"
   }
 }

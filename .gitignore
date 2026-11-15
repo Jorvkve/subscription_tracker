@@ -41,3 +41,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Cloudflare (OpenNext) build output and local state
+/.open-next/
+/.wrangler/
+.dev.vars*
+/prisma/schema.cloudflare.prisma

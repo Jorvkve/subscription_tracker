@@ -1,0 +1,26 @@
+// Cloudflare Workers deployment, built with OpenNext. Vercel ignores this file.
+// Secrets (DATABASE_URL, AUTH_SECRET, ...) live in the Worker's settings, not here.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "subscription-tracker",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      // Self-reference binding used by OpenNext; must match the worker name.
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "subscription-tracker"
+    }
+  ],
+  "images": {
+    "binding": "IMAGES"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
