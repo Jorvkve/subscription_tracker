@@ -37,6 +37,11 @@ Handoff for any agent or person picking this up. Last updated 2026-11-17.
 
 ## Not yet confirmed
 
+- Open items after the move to Cloudflare (2026-11-17), set aside by the owner to test later:
+  - The bot has not handled a real message through the Cloudflare webhook yet. Test with `/today`, a `ข้าว 60` style entry, a slip photo (Drive upload and Gemini), and a "จ่ายแล้ว" button. If it fails, point the webhook back to the Vercel URL with `setWebhook` (same secret, `allowed_updates` message and callback_query).
+  - `SMTP_USER` and `REMINDER_EMAIL_TO` are not in the Worker (they are empty in the local `.env`). The owner adds them as Secrets with the Vercel values; until then reminder emails are skipped. After adding them, confirm one reminder email arrives.
+  - The first scheduled Cloudflare cron runs (01:00 reminders, 21:00 summary, Bangkok time) have not been seen; check the "ประวัติและระบบ" page or the nightly Telegram summary. The routes were called by hand on the Worker and returned 200.
+  - The receipt panel at the bottom of `/subscriptions` and the due-soon badge on the Subs menu were checked only with sample data, not with the owner's real subscriptions.
 - The first budget warning has not been seen yet.
 - Otherwise nothing open. On 2026-11-09 the owner confirmed in the live bot and on the web: the "จ่ายแล้ว" button, `/edit`, `/undo`, backdated entries, and Gemini slip reading in Telegram and on the web form. The reminder email and the Telegram reminder were confirmed by a manual production cron run. The test subscription "ทดสอบ Telegram (ลบได้)" and the test expense were deleted afterwards.
 - Tip: to post a test update to the webhook from Git Bash, write the JSON to a UTF-8 file and send it with `--data-binary @file`. Thai text in a command-line argument arrives garbled.
