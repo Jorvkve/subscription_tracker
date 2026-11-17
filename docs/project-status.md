@@ -1,19 +1,20 @@
 # Project status
 
-Handoff for any agent or person picking this up. Last updated 2026-11-15.
+Handoff for any agent or person picking this up. Last updated 2026-11-17.
 
 ## Where things run
 
-- App: Vercel, `https://subscriptiontracker-gilt.vercel.app`, deployed from `main`. Crons and the Telegram webhook run here.
-- Second copy on Cloudflare Workers (2026-11-15, confirmed working by the owner): `https://subscription-tracker.turth00.workers.dev`, Worker `subscription-tracker`, built by Workers Builds from `main` through OpenNext. Web pages only; crons and the bot stay on Vercel, so both must keep running.
+- App on Vercel: `https://subscriptiontracker-gilt.vercel.app`, deployed from `main`. Since 2026-11-17 it serves web pages only; `vercel.json` has no crons.
+- App on Cloudflare Workers (web pages since 2026-11-15, confirmed by the owner; crons and the Telegram webhook since 2026-11-17): `https://subscription-tracker.turth00.workers.dev`, Worker `subscription-tracker`, built by Workers Builds from `main` through OpenNext.
+  - Crons: `cloudflare-worker.mjs` is the Worker entry. It wraps `.open-next/worker.js` and its `scheduled` handler maps the Cron Triggers in `wrangler.jsonc` (`0 18 * * *` reminders, `0 14 * * *` daily summary, UTC) to the existing cron routes with the `CRON_SECRET` bearer token. Cloudflare runs them on time, unlike Vercel Hobby's one-hour window. Both routes returned 200 when called on the Worker on 2026-11-17.
   - Build: `npm run build` runs `scripts/build.mjs`, which runs `opennextjs-cloudflare build` when `WORKERS_CI=1` and `next build` elsewhere; `open-next.config.ts` sets `buildCommand` to `npx next build` to avoid recursion. The postinstall `scripts/prisma-generate.mjs` generates the Prisma client with `runtime = "cloudflare"` on Workers, because Workers forbid compiling WebAssembly at runtime.
   - Database: Workers cannot trust Supabase's private root CA, so they connect through Hyperdrive config `subtrack-db` (id in `wrangler.jsonc`, binding `HYPERDRIVE`), which uses the session pooler (`DIRECT_URL`), `verify-full` against the uploaded CA `supabase-root-2021-ca`, and has caching disabled. `src/lib/prisma.ts` uses it when a Cloudflare context exists.
-  - Secrets live in the Worker, uploaded with Wrangler from `.env`: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `ALLOWED_GOOGLE_EMAILS`, `APP_TIMEZONE`, `AUTH_TRUST_HOST=true`, `SUPABASE_DB_CA_BASE64`. `GEMINI_API_KEY` is not there yet, so slip reading on the web works only on Vercel. Do not add plain-text variables with the same names in the dashboard; they block secrets.
+  - Secrets live in the Worker, uploaded with Wrangler from `.env`: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `ALLOWED_GOOGLE_EMAILS`, `APP_TIMEZONE`, `AUTH_TRUST_HOST=true`, `SUPABASE_DB_CA_BASE64`, and since 2026-11-17 `CRON_SECRET`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_APP_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ALLOWED_CHAT_ID`. `SMTP_USER` and `REMINDER_EMAIL_TO` are empty in the local `.env`, so the owner adds them in the dashboard; until then reminder emails are skipped and Telegram reminders still go out. `GEMINI_API_KEY` was added by the owner as a plain variable; `keep_vars` in `wrangler.jsonc` keeps it across deploys. Do not add a plain variable with the same name as a secret; it blocks the secret.
   - Google OAuth has the workers.dev callback URIs for sign-in and Drive.
   - OpenNext's bundle step fails on this Windows PC (symlink permission), so the Cloudflare build can only be checked on Workers Builds.
 - Database: Supabase PostgreSQL, all 7 migrations applied (latest `20261110000000_add_category_budgets` on 2026-11-09). A local PostgreSQL copy on the owner's PC is a stale fallback.
 - Slip images: the owner's Google Drive, app-created `Subtrack Slips` folder, `drive.file` scope, files named `DD-MM-YYYY_HH-mm`.
-- Telegram bot: `@subtrack_jorv_bot`, webhook `https://subscriptiontracker-gilt.vercel.app/api/telegram/webhook`, registered with a secret token. Env vars `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ALLOWED_CHAT_ID` are set in Vercel and `.env`.
+- Telegram bot: `@subtrack_jorv_bot`, webhook `https://subscription-tracker.turth00.workers.dev/api/telegram/webhook` since 2026-11-17 (was the Vercel URL), same secret token, `allowed_updates` message and callback_query. The Vercel route still works, so pointing the webhook back with `setWebhook` is a one-step rollback. Env vars `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ALLOWED_CHAT_ID` are set in Vercel, the Worker, and `.env`.
 
 ## Done
 
