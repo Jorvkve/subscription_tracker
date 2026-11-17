@@ -3,7 +3,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "subscription-tracker",
-  "main": ".open-next/worker.js",
+  // Wraps .open-next/worker.js and adds the scheduled (cron) handler.
+  "main": "cloudflare-worker.mjs",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
@@ -32,6 +33,12 @@
   "images": {
     "binding": "IMAGES"
   },
+  // Replaced Vercel's crons on 2026-11-17; each maps to a route in cloudflare-worker.mjs.
+  "triggers": {
+    "crons": ["0 18 * * *", "0 14 * * *"]
+  },
+  // Keep plain-text variables set in the dashboard (GEMINI_API_KEY) across deploys.
+  "keep_vars": true,
   "observability": {
     "enabled": true
   }
